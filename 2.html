@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Three.js + MediaPipe：手势触发特效 (改进版-防误判)</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js"
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #input-video {
+            display: none;
+        }
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(20, 20, 30, 0.8);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 30px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            z-index: 100;
+            font-size: 16px;
+            pointer-events: none;
+        }
+        #info-panel span {
+            color: #7ec8ff;
+            font-weight: 600;
+            margin-left: 6px;
+        }
+        #gesture-hint {
+            position: absolute;
+            bottom: 80px;
+            left: 20px;
+            background: rgba(30,30,40,0.7);
+            color: #ffaa66;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            backdrop-filter: blur(4px);
+            border: 1px solid #ffaa6644;
+            z-index: 100;
+        }
+        #hint {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            color: rgba(255,255,255,0.5);
+            font-size: 14px;
+            background: rgba(0,0,0,0.3);
+            padding: 6px 12px;
+            border-radius: 20px;
+            backdrop-filter: blur(4px);
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <video id="input-video" playsinline></video>
+    <div id="info-panel">
+        👋 手部状态: <span id="hand-status">等待摄像头...</span>
+    </div>
+    <div id="gesture-hint">
+        🖐️ 手势: <span id="gesture-display">无</span> 
+        <span style="color:#aaa; margin-left:12px;">1=❤️ 2=🌸 3=🎉新年快乐</span>
+    </div>
+    <div id="hint">
+        Three.js + MediaPipe | 抓取物体(捏合) | 手势触发特效 (改进版)
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'https://unpkg.com/three@0.128.0/examples/jsm/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.128.0/examples/jsm/renderers/CSS2DRenderer.js';
+
+        // --- 配置参数 ---
+        const NUM_LANDMARKS = 21;
+        const SCALE = 5.0;
+        // 交互阈值
+        const PINCH_DIST_THRESH = 0.25;
+        const RELEASE_DIST_THRESH = 0.35;
+        const GRAB_DIST_THRESH = 0.7;
+
+        // 指尖索引
+        const THUMB_TIP = 4;
+        const INDEX_TIP = 8;
+        const MIDDLE_TIP = 12;
+        const RING_TIP = 16;
+        const PINKY_TIP = 20;
+        // 指根关节
+        const INDEX_MCP = 5;
+        const MIDDLE_MCP = 9;
+        const RING_MCP = 13;
+        const PINKY_MCP = 17;
+        // 拇指使用第二关节(2)作为基点
+
+        // --- DOM 元素 ---
+        const videoElement = document.getElementById('input-video');
+        const handStatusSpan = document.getElementById('hand-status');
+        const gestureSpan = document.getElementById('gesture-display');
+
+        // --- Three.js 场景初始化 (与之前相同) ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x11161f);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1, 10);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const css2DRenderer = new CSS2DRenderer();
+        css2DRenderer.setSize(window.innerWidth, window.innerHeight);
+        css2DRenderer.domElement.style.position = 'absolute';
+        css2DRenderer.domElement.style.top = '0px';
+        css2DRenderer.domElement.style.left = '0px';
+        css2DRenderer.domElement.style.pointerEvents = 'none';
+        document.body.appendChild(css2DRenderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.target.set(0, 1, 0);
+
+        // 灯光、地面、星星
+        const ambientLight = new THREE.AmbientLight(0x404060);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(2, 5, 5);
+        dirLight.castShadow = true;
+        dirLight.receiveShadow = true;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        const d = 8;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        dirLight.shadow.camera.near = 2;
+        dirLight.shadow.camera.far = 20;
+        scene.add(dirLight);
+
+        const fillLight = new THREE.PointLight(0x4466cc, 0.6);
+        fillLight.position.set(-2, 1, 3);
+        scene.add(fillLight);
+
+        const gridHelper = new THREE.GridHelper(12, 20, 0x88aaff, 0x335588);
+        gridHelper.position.y = -1.2;
+        scene.add(gridHelper);
+
+        const groundPlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(12, 12),
+            new THREE.ShadowMaterial({ color: 0x111122, opacity: 0.4 })
+        );
+        groundPlane.rotation.x = -Math.PI / 2;
+        groundPlane.position.y = -1.2;
+        groundPlane.receiveShadow = true;
+        scene.add(groundPlane);
+
+        const starsGeometry = new THREE.BufferGeometry();
+        const starsCount = 600;
+        const starPositions = new Float32Array(starsCount * 3);
+        for (let i = 0; i < starsCount; i++) {
+            starPositions[i*3] = (Math.random() - 0.5) * 50;
+            starPositions[i*3+1] = (Math.random() - 0.5) * 30;
+            starPositions[i*3+2] = (Math.random() - 0.5) * 50 - 20;
+        }
+        starsGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+        const starsMaterial = new THREE.PointsMaterial({ color: 0xaaccff, size: 0.15, transparent: true });
+        const stars = new THREE.Points(starsGeometry, starsMaterial);
+        scene.add(stars);
+
+        // --- 手部骨架 ---
+        const jointMeshes = [];
+        const colors = [0xff5555,0xffaa55,0xffff55,0x55ff55,0x55ffff,0x5555ff,0xaa55ff,0xff55aa,
+                        0xff8888,0xffcc88,0xffff88,0x88ff88,0x88ffff,0x8888ff,0xcc88ff,0xff88cc,
+                        0xff9999,0xffdd99,0xffff99,0x99ff99,0x99ffff];
+        const sphereRadius = 0.12;
+        const sphereGeom = new THREE.SphereGeometry(sphereRadius, 24, 16);
+        for (let i = 0; i < NUM_LANDMARKS; i++) {
+            const material = new THREE.MeshStandardMaterial({ color: colors[i%colors.length], emissive: 0x222222 });
+            const sphere = new THREE.Mesh(sphereGeom, material);
+            sphere.castShadow = true;
+            sphere.receiveShadow = false;
+            sphere.position.set(0,0,-10);
+            scene.add(sphere);
+            jointMeshes.push(sphere);
+        }
+        const connections = window.HAND_CONNECTIONS;
+        const numSegments = connections.length;
+        const vertices = new Float32Array(numSegments * 2 * 3);
+        const lineGeometry = new THREE.BufferGeometry();
+        lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x88ccff });
+        const lineSegments = new THREE.LineSegments(lineGeometry, lineMaterial);
+        scene.add(lineSegments);
+
+        // --- 可交互物体 ---
+        const interactableObjects = [];
+        const cube1 = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.6,0.6), new THREE.MeshStandardMaterial({ color: 0xff8844, emissive:0x221100 }));
+        cube1.castShadow = true; cube1.receiveShadow = true; cube1.position.set(1.5,0.2,-1.0);
+        scene.add(cube1);
+        interactableObjects.push({ mesh: cube1, type:'cube', originalEmissive:0x221100, isGrabbed:false });
+        
+        const cube2 = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), new THREE.MeshStandardMaterial({ color: 0x44aaff, emissive:0x002244 }));
+        cube2.castShadow = true; cube2.receiveShadow = true; cube2.position.set(-1.2,0.3,-0.5);
+        scene.add(cube2);
+        interactableObjects.push({ mesh: cube2, originalEmissive:0x002244, isGrabbed:false });
+        
+        const sphere1 = new THREE.Mesh(new THREE.SphereGeometry(0.4,32,16), new THREE.MeshStandardMaterial({ color: 0xaa66ff, emissive:0x220044 }));
+        sphere1.castShadow = true; sphere1.receiveShadow = true; sphere1.position.set(0.5,0.4,-2.0);
+        scene.add(sphere1);
+        interactableObjects.push({ mesh: sphere1, originalEmissive:0x220044, isGrabbed:false });
+        
+        const sphere2 = new THREE.Mesh(new THREE.SphereGeometry(0.3,24,12), new THREE.MeshStandardMaterial({ color: 0x66ff99, emissive:0x003322 }));
+        sphere2.castShadow = true; sphere2.receiveShadow = true; sphere2.position.set(-0.8,-0.1,-2.5);
+        scene.add(sphere2);
+        interactableObjects.push({ mesh: sphere2, originalEmissive:0x003322, isGrabbed:false });
+
+        let grabbedObject = null;
+        let grabOffset = new THREE.Vector3();
+
+        // --- 改进的手势识别函数 (双阈值) ---
+        function recognizeGesture(landmarks) {
+            if (!landmarks) return 0;
+            
+            const STRAIGHT_THRESH = 0.12; // 伸直阈值
+            const BENT_THRESH = 0.08;     // 弯曲阈值
+            
+            function fingerDist(tipIdx, baseIdx) {
+                const tip = landmarks[tipIdx];
+                const base = landmarks[baseIdx];
+                const dx = tip.x - base.x;
+                const dy = tip.y - base.y;
+                const dz = tip.z - base.z;
+                return Math.sqrt(dx*dx + dy*dy + dz*dz);
+            }
+            
+            const thumbDist = fingerDist(THUMB_TIP, 2);
+            const indexDist = fingerDist(INDEX_TIP, INDEX_MCP);
+            const middleDist = fingerDist(MIDDLE_TIP, MIDDLE_MCP);
+            const ringDist = fingerDist(RING_TIP, RING_MCP);
+            const pinkyDist = fingerDist(PINKY_TIP, PINKY_MCP);
+            
+            // 伸直判断
+            const thumbStraight = thumbDist > STRAIGHT_THRESH;
+            const indexStraight = indexDist > STRAIGHT_THRESH;
+            const middleStraight = middleDist > STRAIGHT_THRESH;
+            const ringStraight = ringDist > STRAIGHT_THRESH;
+            const pinkyStraight = pinkyDist > STRAIGHT_THRESH;
+            
+            // 弯曲判断
+            const thumbBent = thumbDist < BENT_THRESH;
+            const indexBent = indexDist < BENT_THRESH;
+            const middleBent = middleDist < BENT_THRESH;
+            const ringBent = ringDist < BENT_THRESH;
+            const pinkyBent = pinkyDist < BENT_THRESH;
+            
+            // 手势1: 仅食指伸直，其他手指必须弯曲
+            if (indexStraight && !middleStraight && !ringStraight && !pinkyStraight && 
+                thumbBent && middleBent && ringBent && pinkyBent) return 1;
+            
+            // 手势2: 食指+中指伸直，无名指+小指+拇指必须弯曲
+            if (indexStraight && middleStraight && !ringStraight && !pinkyStraight && 
+                thumbBent && ringBent && pinkyBent) return 2;
+            
+            // 手势3: 拇指+食指+中指伸直，无名指+小指必须弯曲
+            if (thumbStraight && indexStraight && middleStraight && !ringStraight && !pinkyStraight && 
+                ringBent && pinkyBent) return 3;
+            
+            return 0;
+        }
+
+        // --- 特效生成函数 (保持不变) ---
+        const activeEffects = [];
+        function createHeartEffect(position) {
+            const particleCount = 200;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            const color = new THREE.Color(0xff3366);
+            for (let i = 0; i < particleCount; i++) {
+                const t = Math.random() * Math.PI * 2;
+                const scale = 0.2;
+                const x = 16 * Math.pow(Math.sin(t), 3) * scale;
+                const y = (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t)) * scale;
+                const z = (Math.random() - 0.5) * 0.5;
+                positions[i*3] = position.x + x + (Math.random()-0.5)*0.3;
+                positions[i*3+1] = position.y + y + (Math.random()-0.5)*0.3;
+                positions[i*3+2] = position.z + z;
+                colors[i*3] = color.r; colors[i*3+1] = color.g; colors[i*3+2] = color.b;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            const material = new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending });
+            const particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+            activeEffects.push({ type:'heart', mesh:particles, life:1.0, velocity:new THREE.Vector3(0,0.02,0), scaleVel:0.02 });
+        }
+
+        function createSakuraEffect(position) {
+            const particleCount = 150;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            for (let i = 0; i < particleCount; i++) {
+                positions[i*3] = position.x + (Math.random()-0.5)*2;
+                positions[i*3+1] = position.y + (Math.random()-0.5)*2;
+                positions[i*3+2] = position.z + (Math.random()-0.5)*2;
+                const pink = new THREE.Color().setHSL(0.95+Math.random()*0.1, 0.8, 0.7);
+                colors[i*3]=pink.r; colors[i*3+1]=pink.g; colors[i*3+2]=pink.b;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            const material = new THREE.PointsMaterial({ size:0.2, vertexColors:true, transparent:true, opacity:1.0 });
+            const particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+            activeEffects.push({ type:'sakura', mesh:particles, life:2.0, velocity:new THREE.Vector3(0,-0.03,0.01), rotSpeed:0.01 });
+        }
+
+        function createNewYearEffect(position) {
+            const div = document.createElement('div');
+            div.textContent = '新年快乐 🎉';
+            div.style.color = '#ffdd44';
+            div.style.fontSize = '80px';
+            div.style.fontWeight = 'bold';
+            div.style.textShadow = '0 0 20px red, 0 0 30px gold';
+            div.style.background = 'rgba(0,0,0,0.4)';
+            div.style.padding = '20px 40px';
+            div.style.borderRadius = '60px';
+            div.style.border = '3px solid gold';
+            div.style.whiteSpace = 'nowrap';
+            const label = new CSS2DObject(div);
+            label.position.copy(position.clone().add(new THREE.Vector3(0,1.5,0)));
+            scene.add(label);
+            
+            const particleCount = 300;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            const velocities = [];
+            for (let i = 0; i < particleCount; i++) {
+                const angle1 = Math.random() * Math.PI * 2;
+                const angle2 = Math.random() * Math.PI * 2;
+                const speed = 0.1 + Math.random() * 0.2;
+                const vx = Math.sin(angle1) * Math.cos(angle2) * speed;
+                const vy = Math.sin(angle1) * Math.sin(angle2) * speed;
+                const vz = Math.cos(angle1) * speed;
+                positions[i*3] = position.x;
+                positions[i*3+1] = position.y;
+                positions[i*3+2] = position.z;
+                const col = new THREE.Color().setHSL(Math.random(), 1.0, 0.6);
+                colors[i*3]=col.r; colors[i*3+1]=col.g; colors[i*3+2]=col.b;
+                velocities.push(new THREE.Vector3(vx, vy, vz));
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            const pmat = new THREE.PointsMaterial({ size:0.2, vertexColors:true, blending:THREE.AdditiveBlending, depthWrite:false });
+            const fireworks = new THREE.Points(geometry, pmat);
+            scene.add(fireworks);
+            
+            activeEffects.push({ type:'newyear', label:label, particles:fireworks, velocities:velocities, life:2.5, age:0 });
+        }
+
+        // --- 更新手部骨架 ---
+        function updateHandSkeleton(landmarks, handedness = 'Right') {
+            if (!landmarks || landmarks.length !== NUM_LANDMARKS) {
+                for (let i = 0; i < NUM_LANDMARKS; i++) jointMeshes[i].position.set(0,0,-10);
+                const attr = lineGeometry.attributes.position;
+                const arr = attr.array;
+                for (let i=0; i<arr.length; i+=3) { arr[i]=0; arr[i+1]=0; arr[i+2]=-10; }
+                attr.needsUpdate = true;
+                lineGeometry.setDrawRange(0,0);
+                handStatusSpan.innerText = '未检测到手';
+                return;
+            }
+
+            handStatusSpan.innerText = `${handedness}手 (21点)`;
+
+            for (let i = 0; i < NUM_LANDMARKS; i++) {
+                const lm = landmarks[i];
+                const x = (lm.x - 0.5) * 2 * SCALE;
+                const y = (0.5 - lm.y) * 2 * SCALE;
+                const z = -lm.z * SCALE * 1.5 - 1.0;
+                jointMeshes[i].position.set(x, y, z);
+            }
+
+            const attr = lineGeometry.attributes.position;
+            const arr = attr.array;
+            let idx = 0;
+            for (let [s,e] of connections) {
+                arr[idx]=jointMeshes[s].position.x; arr[idx+1]=jointMeshes[s].position.y; arr[idx+2]=jointMeshes[s].position.z;
+                arr[idx+3]=jointMeshes[e].position.x; arr[idx+4]=jointMeshes[e].position.y; arr[idx+5]=jointMeshes[e].position.z;
+                idx+=6;
+            }
+            attr.needsUpdate = true;
+            lineGeometry.setDrawRange(0, numSegments*2);
+        }
+
+        // --- MediaPipe 初始化 ---
+        async function initMediaPipe() {
+            const hands = new window.Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+            hands.setOptions({ maxNumHands:1, modelComplexity:1, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+            hands.onResults((results) => {
+                if (results.multiHandLandmarks?.length) {
+                    const landmarks = results.multiHandLandmarks[0];
+                    const handedness = results.multiHandedness?.[0]?.label || 'Unknown';
+                    updateHandSkeleton(landmarks, handedness);
+
+                    // 使用改进的手势识别
+                    const gesture = recognizeGesture(landmarks);
+                    gestureSpan.innerText = ['无','1 爱心','2 樱花','3 新年快乐'][gesture] || '无';
+                    
+                    if (gesture !== lastGesture && gesture !== 0) {
+                        const wristPos = jointMeshes[0].position.clone();
+                        if (gesture === 1) createHeartEffect(wristPos);
+                        else if (gesture === 2) createSakuraEffect(wristPos);
+                        else if (gesture === 3) createNewYearEffect(wristPos);
+                    }
+                    lastGesture = gesture;
+                } else {
+                    updateHandSkeleton(null);
+                    gestureSpan.innerText = '无';
+                    lastGesture = 0;
+                }
+            });
+            const camera = new window.Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width:640, height:480 });
+            camera.start().catch(e => { handStatusSpan.innerText = '摄像头错误'; });
+        }
+        let lastGesture = 0;
+        initMediaPipe();
+
+        // --- 抓取交互更新 ---
+        function updateInteraction() {
+            if (jointMeshes[0].position.z > -9) {
+                const thumbPos = jointMeshes[THUMB_TIP].position.clone();
+                const indexPos = jointMeshes[INDEX_TIP].position.clone();
+                const pinchDist = thumbPos.distanceTo(indexPos);
+
+                if (grabbedObject) {
+                    if (pinchDist > RELEASE_DIST_THRESH) {
+                        grabbedObject.mesh.material.emissive.setHex(grabbedObject.originalEmissive);
+                        grabbedObject.isGrabbed = false;
+                        grabbedObject = null;
+                    } else {
+                        const targetPos = indexPos.clone().add(grabOffset);
+                        grabbedObject.mesh.position.copy(targetPos);
+                    }
+                } else {
+                    if (pinchDist < PINCH_DIST_THRESH) {
+                        let closest = null, minDist = Infinity;
+                        interactableObjects.forEach(obj => {
+                            if (obj.isGrabbed) return;
+                            const d = indexPos.distanceTo(obj.mesh.position);
+                            if (d < GRAB_DIST_THRESH && d < minDist) { minDist = d; closest = obj; }
+                        });
+                        if (closest) {
+                            grabbedObject = closest;
+                            grabbedObject.isGrabbed = true;
+                            grabOffset.copy(grabbedObject.mesh.position).sub(indexPos);
+                            grabbedObject.mesh.material.emissive.setHex(0x444444);
+                        }
+                    }
+                }
+
+                interactableObjects.forEach(obj => {
+                    if (obj.isGrabbed) return;
+                    const distToIndex = indexPos.distanceTo(obj.mesh.position);
+                    const distToThumb = thumbPos.distanceTo(obj.mesh.position);
+                    if (Math.min(distToIndex, distToThumb) < 0.5) {
+                        obj.mesh.material.emissive.setHex(0x553300);
+                    } else {
+                        obj.mesh.material.emissive.setHex(obj.originalEmissive);
+                    }
+                });
+            } else {
+                if (grabbedObject) {
+                    grabbedObject.mesh.material.emissive.setHex(grabbedObject.originalEmissive);
+                    grabbedObject.isGrabbed = false;
+                    grabbedObject = null;
+                }
+            }
+        }
+
+        // --- 特效动画更新 ---
+        function updateEffects(deltaTime) {
+            for (let i = activeEffects.length-1; i >= 0; i--) {
+                const eff = activeEffects[i];
+                eff.life -= deltaTime * 0.5;
+                if (eff.life <= 0) {
+                    if (eff.mesh) scene.remove(eff.mesh);
+                    if (eff.label) scene.remove(eff.label);
+                    if (eff.particles) scene.remove(eff.particles);
+                    activeEffects.splice(i,1);
+                    continue;
+                }
+
+                if (eff.type === 'heart') {
+                    const scale = 1 + (1 - eff.life) * 2;
+                    eff.mesh.scale.set(scale, scale, scale);
+                    eff.mesh.material.opacity = eff.life;
+                    eff.mesh.position.add(eff.velocity);
+                } else if (eff.type === 'sakura') {
+                    eff.mesh.rotation.y += 0.01;
+                    eff.mesh.position.add(eff.velocity);
+                    eff.mesh.material.opacity = eff.life * 0.8;
+                } else if (eff.type === 'newyear') {
+                    eff.age += deltaTime;
+                    if (eff.label) {
+                        eff.label.position.y += 0.02;
+                        eff.label.element.style.opacity = eff.life;
+                    }
+                    if (eff.particles) {
+                        const positions = eff.particles.geometry.attributes.position.array;
+                        for (let j = 0; j < positions.length/3; j++) {
+                            positions[j*3] += eff.velocities[j].x;
+                            positions[j*3+1] += eff.velocities[j].y;
+                            positions[j*3+2] += eff.velocities[j].z;
+                            eff.velocities[j].y -= 0.001;
+                        }
+                        eff.particles.geometry.attributes.position.needsUpdate = true;
+                        eff.particles.material.opacity = eff.life;
+                    }
+                }
+            }
+        }
+
+        // --- 动画循环 ---
+        let clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            stars.rotation.y += 0.0002;
+            
+            updateInteraction();
+            updateEffects(delta);
+
+            controls.update();
+            renderer.render(scene, camera);
+            css2DRenderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            css2DRenderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
