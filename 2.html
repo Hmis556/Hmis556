@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Three.js + MediaPipe：新年手势特效 (握拳纯粒子烟花)</title>
+    <title>Three.js + MediaPipe：纯粒子新年快乐</title>
     <script type="importmap">
         {
             "imports": {
@@ -78,10 +78,10 @@
     </div>
     <div id="gesture-hint">
         🎇 手势: <span id="gesture-display">无</span> 
-        <span style="color:#ffaa44; margin-left:12px;">1=❤️ 2=🎆烟花 3=👊纯粒子烟花</span>
+        <span style="color:#ffaa44; margin-left:12px;">1=❤️ 2=🎆烟花 3=👊纯粒子「新年快乐」</span>
     </div>
     <div id="hint">
-        Three.js + MediaPipe | 阈值优化 | 二指烟花 | 握拳纯粒子
+        Three.js + MediaPipe | 握拳触发粒子文字 | 二指烟花
     </div>
 
     <script type="module">
@@ -140,7 +140,7 @@
         fillLight.position.set(-2, 2, 3);
         scene.add(fillLight);
 
-        // 地面网格 (暗金色) - 保留作为参考
+        // 地面网格 (暗金色)
         const gridHelper = new THREE.GridHelper(12, 20, 0xffaa33, 0x883333);
         gridHelper.position.y = -1.2;
         scene.add(gridHelper);
@@ -214,12 +214,12 @@
         // --- 特效存储 ---
         const activeEffects = [];
 
-        // --- 手势识别函数 (阈值更严格，减少误触) ---
+        // --- 手势识别函数 (阈值严格，0.12/0.09) ---
         function recognizeGesture(landmarks) {
             if (!landmarks) return 0;
             
-            const STRAIGHT_THRESH = 0.12; // 伸直阈值 (需更直)
-            const BENT_THRESH = 0.09;     // 弯曲阈值 (需更弯)
+            const STRAIGHT_THRESH = 0.12;
+            const BENT_THRESH = 0.09;
             
             function fingerDist(tipIdx, baseIdx) {
                 const tip = landmarks[tipIdx];
@@ -248,15 +248,15 @@
             const ringBent = ringDist < BENT_THRESH;
             const pinkyBent = pinkyDist < BENT_THRESH;
             
-            // 手势1: 仅食指伸直，其他手指必须弯曲
+            // 手势1: 仅食指伸直
             if (indexStraight && !middleStraight && !ringStraight && !pinkyStraight && 
                 thumbBent && middleBent && ringBent && pinkyBent) return 1;
             
-            // 手势2: 食指+中指伸直，无名指+小指+拇指必须弯曲
+            // 手势2: 食指+中指伸直
             if (indexStraight && middleStraight && !ringStraight && !pinkyStraight && 
                 thumbBent && ringBent && pinkyBent) return 2;
             
-            // 手势3: 握拳（所有手指弯曲）
+            // 手势3: 握拳
             if (thumbBent && indexBent && middleBent && ringBent && pinkyBent) return 3;
             
             return 0;
@@ -288,7 +288,7 @@
             activeEffects.push({ type:'heart', mesh:particles, life:1.0, velocity:new THREE.Vector3(0,0.02,0) });
         }
 
-        // 烟花特效 (用于手势2)
+        // 烟花特效 (手势2)
         function createFireworksEffect(position) {
             const particleCount = 300;
             const geometry = new THREE.BufferGeometry();
@@ -305,7 +305,7 @@
                 positions[i*3] = position.x;
                 positions[i*3+1] = position.y;
                 positions[i*3+2] = position.z;
-                const hue = 0.03 + Math.random() * 0.1; // 红橙色范围
+                const hue = 0.03 + Math.random() * 0.1;
                 const col = new THREE.Color().setHSL(hue, 1.0, 0.6);
                 colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
                 velocities.push(new THREE.Vector3(vx, vy, vz));
@@ -325,40 +325,85 @@
             });
         }
 
-        // 握拳特效 (纯粒子烟花，无文字)
-        function createFistFireworksEffect(position) {
-            const particleCount = 400; // 更多粒子
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(particleCount * 3);
-            const colors = new Float32Array(particleCount * 3);
-            const velocities = [];
-            for (let i = 0; i < particleCount; i++) {
-                const angle1 = Math.random() * Math.PI * 2;
-                const angle2 = Math.random() * Math.PI * 2;
-                const speed = 0.15 + Math.random() * 0.3;
-                const vx = Math.sin(angle1) * Math.cos(angle2) * speed;
-                const vy = Math.sin(angle1) * Math.sin(angle2) * speed;
-                const vz = Math.cos(angle1) * speed;
-                positions[i*3] = position.x;
-                positions[i*3+1] = position.y;
-                positions[i*3+2] = position.z;
-                // 更丰富的颜色：金色、红色、橙色、黄色
-                const hue = 0.05 + Math.random() * 0.15;
-                const col = new THREE.Color().setHSL(hue, 1.0, 0.6);
-                colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
-                velocities.push(new THREE.Vector3(vx, vy, vz));
+        // 纯粒子「新年快乐」文字 (握拳触发)
+        function createChineseCharacterParticles(position) {
+            // 创建一个离屏canvas绘制文字
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.font = 'bold 90px "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('新年快乐', canvas.width/2, canvas.height/2);
+            
+            // 获取像素数据
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            // 采样步长，控制粒子数量
+            const step = 2; // 每隔2个像素采样一次
+            const positions = [];
+            const colors = [];
+            
+            // 文字区域范围映射到3D空间的大小 (宽度约3，高度约0.8)
+            const scaleX = 3.0 / canvas.width;
+            const scaleY = 0.8 / canvas.height;
+            
+            for (let y = 0; y < canvas.height; y += step) {
+                for (let x = 0; x < canvas.width; x += step) {
+                    const index = (y * canvas.width + x) * 4;
+                    // 如果像素亮度高（白色文字）
+                    if (data[index] > 128) {
+                        // 将canvas坐标映射到3D空间，使文字位于手心位置附近
+                        const px = (x - canvas.width/2) * scaleX;
+                        const py = -(y - canvas.height/2) * scaleY; // 反转Y
+                        const pz = (Math.random() - 0.5) * 0.2; // 少量深度随机
+                        
+                        positions.push(position.x + px, position.y + py + 0.5, position.z + pz); // 向上偏移0.5使文字更明显
+                        
+                        // 随机金色/红色
+                        const hue = 0.05 + Math.random() * 0.15;
+                        const col = new THREE.Color().setHSL(hue, 1.0, 0.6);
+                        colors.push(col.r, col.g, col.b);
+                    }
+                }
             }
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            const material = new THREE.PointsMaterial({ size: 0.22, vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false });
+            
+            if (positions.length === 0) return; // 防止无粒子
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            
+            const material = new THREE.PointsMaterial({ 
+                size: 0.1, 
+                vertexColors: true, 
+                transparent: true, 
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
             const particles = new THREE.Points(geometry, material);
             scene.add(particles);
             
+            // 为每个粒子生成随机速度，用于扩散
+            const velocities = [];
+            for (let i = 0; i < positions.length/3; i++) {
+                velocities.push(new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.03,
+                    (Math.random() - 0.5) * 0.03,
+                    (Math.random() - 0.5) * 0.03
+                ));
+            }
+            
             activeEffects.push({
-                type: 'fistFireworks',
+                type: 'chineseChars',
                 mesh: particles,
                 velocities: velocities,
-                life: 2.0, // 寿命更长
+                life: 2.0,
                 age: 0
             });
         }
@@ -409,14 +454,14 @@
                     updateHandSkeleton(landmarks, handedness);
 
                     const gesture = recognizeGesture(landmarks);
-                    // 显示手势：1爱心，2烟花，3握拳纯粒子
-                    gestureSpan.innerText = ['无','1 爱心','2 烟花','3 握拳(粒子)'][gesture] || '无';
+                    // 显示手势：1爱心，2烟花，3握拳粒子文字
+                    gestureSpan.innerText = ['无','1 爱心','2 烟花','3 粒子文字'][gesture] || '无';
                     
                     if (gesture !== lastGesture && gesture !== 0) {
                         const wristPos = jointMeshes[0].position.clone();
                         if (gesture === 1) createHeartEffect(wristPos);
                         else if (gesture === 2) createFireworksEffect(wristPos);
-                        else if (gesture === 3) createFistFireworksEffect(wristPos);
+                        else if (gesture === 3) createChineseCharacterParticles(wristPos);
                     }
                     lastGesture = gesture;
                 } else {
@@ -447,14 +492,28 @@
                     eff.mesh.scale.set(scale, scale, scale);
                     eff.mesh.material.opacity = eff.life;
                     eff.mesh.position.add(eff.velocity);
-                } else if (eff.type === 'fireworks' || eff.type === 'fistFireworks') {
+                } else if (eff.type === 'fireworks') {
                     eff.age += deltaTime;
                     const positions = eff.mesh.geometry.attributes.position.array;
                     for (let j = 0; j < positions.length/3; j++) {
                         positions[j*3] += eff.velocities[j].x;
                         positions[j*3+1] += eff.velocities[j].y;
                         positions[j*3+2] += eff.velocities[j].z;
-                        eff.velocities[j].y -= 0.002; // 重力
+                        eff.velocities[j].y -= 0.002;
+                    }
+                    eff.mesh.geometry.attributes.position.needsUpdate = true;
+                    eff.mesh.material.opacity = eff.life;
+                } else if (eff.type === 'chineseChars') {
+                    eff.age += deltaTime;
+                    const positions = eff.mesh.geometry.attributes.position.array;
+                    for (let j = 0; j < positions.length/3; j++) {
+                        positions[j*3] += eff.velocities[j].x;
+                        positions[j*3+1] += eff.velocities[j].y;
+                        positions[j*3+2] += eff.velocities[j].z;
+                        // 轻微扩散效果
+                        eff.velocities[j].x *= 1.01;
+                        eff.velocities[j].y *= 1.01;
+                        eff.velocities[j].z *= 1.01;
                     }
                     eff.mesh.geometry.attributes.position.needsUpdate = true;
                     eff.mesh.material.opacity = eff.life;
