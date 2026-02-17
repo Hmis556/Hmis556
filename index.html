@@ -2,15 +2,19 @@
 <html lang="zh">
 <head>
  <meta charset="UTF-8">
- <title>WebGL 手势控制爱心粒子</title>
+ <title>手势识别：爱心·樱花·新年快乐</title>
  <style>
      body { margin: 0; overflow: hidden; background-color: #000; }
      #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
-     /* 隐藏摄像头视频流，只用于后台分析 */
      .input_video { display: none; }
      #loading {
          position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
          color: white; font-family: sans-serif; font-size: 24px; pointer-events: none; z-index: 10;
+     }
+     #hint {
+         position: absolute; bottom: 20px; left: 20px; color: rgba(255,255,255,0.7);
+         font-family: sans-serif; font-size: 16px; z-index: 20; background: rgba(0,0,0,0.5); padding: 8px 15px; border-radius: 20px;
+         pointer-events: none;
      }
  </style>
  <!-- 引入 Three.js -->
@@ -24,6 +28,7 @@
 <body>
 
 <div id="loading">正在加载模型与摄像头...<br>请允许摄像头权限</div>
+<div id="hint">手势: 1=❤️ 爱心 | 2=🌸 樱花 | 3=🎉 新年快乐</div>
 <div id="canvas-container"></div>
 <video class="input_video"></video>
 
@@ -37,54 +42,124 @@
  renderer.setSize(window.innerWidth, window.innerHeight);
  document.getElementById('canvas-container').appendChild(renderer.domElement);
 
- // --- 2. 创建爱心粒子系统 ---
- const particleCount = 3000; // 粒子数量
+ // --- 2. 粒子系统参数 ---
+ const particleCount = 4000; // 增加粒子让文字更清晰
  const geometry = new THREE.BufferGeometry();
  const positions = new Float32Array(particleCount * 3);
- const targetPositions = new Float32Array(particleCount * 3); // 存储爱心形状的目标位置
- const randomPositions = new Float32Array(particleCount * 3); // 存储散开时的随机位置
+ const randomPositions = new Float32Array(particleCount * 3); // 散开时的随机位置
 
- // 爱心方程函数
+ // 存储三种形状的目标位置
+ const heartPositions = new Float32Array(particleCount * 3);
+ const sakuraPositions = new Float32Array(particleCount * 3);
+ const newYearPositions = new Float32Array(particleCount * 3);
+
+ // --- 爱心形状生成函数 ---
  function getHeartPosition(t, scale = 1) {
      const x = 16 * Math.pow(Math.sin(t), 3);
      const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-     const z = 0; 
-     return { x: x * scale, y: y * scale, z: z * scale };
+     return { x: x * scale, y: y * scale };
  }
 
+ // --- 生成所有目标位置 ---
  for (let i = 0; i < particleCount; i++) {
-     // 生成爱心形状的目标点
-     // 为了让爱心立体一点，我们随机分布t，并在Z轴加一点随机扰动
+     // 随机位置 (散开)
+     randomPositions[i*3] = (Math.random() - 0.5) * 100;
+     randomPositions[i*3+1] = (Math.random() - 0.5) * 60;
+     randomPositions[i*3+2] = (Math.random() - 0.5) * 50;
+
+     // 1. 爱心位置
      const t = Math.random() * Math.PI * 2;
-     const scale = 0.5; 
-     const heartPos = getHeartPosition(t, scale);
-     
-     // 填充爱心内部 (随机缩放)
-     const r = Math.sqrt(Math.random()); 
-     
-     targetPositions[i * 3] = heartPos.x * r;
-     targetPositions[i * 3 + 1] = heartPos.y * r;
-     targetPositions[i * 3 + 2] = (Math.random() - 0.5) * 5; // Z轴厚度
+     const scale = 0.5;
+     const heart = getHeartPosition(t, scale);
+     const r = Math.sqrt(Math.random()); // 内部填充
+     heartPositions[i*3] = heart.x * r;
+     heartPositions[i*3+1] = heart.y * r;
+     heartPositions[i*3+2] = (Math.random() - 0.5) * 5; // Z轴厚度
 
-     // 生成散开的随机位置 (爆炸效果)
-     randomPositions[i * 3] = (Math.random() - 0.5) * 100;
-     randomPositions[i * 3 + 1] = (Math.random() - 0.5) * 60;
-     randomPositions[i * 3 + 2] = (Math.random() - 0.5) * 50;
+     // 2. 樱花位置 (圆形区域模拟花瓣飘落)
+     const angle = Math.random() * Math.PI * 2;
+     const radius = 12 * Math.sqrt(Math.random()); // 半径0~12
+     sakuraPositions[i*3] = Math.cos(angle) * radius;
+     sakuraPositions[i*3+1] = Math.sin(angle) * radius * 0.8; // 垂直稍扁
+     sakuraPositions[i*3+2] = (Math.random() - 0.5) * 4;
 
-     // 初始位置设为散开状态
-     positions[i * 3] = randomPositions[i * 3];
-     positions[i * 3 + 1] = randomPositions[i * 3 + 1];
-     positions[i * 3 + 2] = randomPositions[i * 3 + 2];
+     // 3. 新年快乐文字位置 (用Canvas采样)
+     // 先留空，后面统一生成
+ }
+
+ // --- 用Canvas生成“新年快乐”文字点阵 ---
+ (function generateNewYearPositions() {
+     const canvas = document.createElement('canvas');
+     canvas.width = 600;
+     canvas.height = 200;
+     const ctx = canvas.getContext('2d');
+     ctx.fillStyle = '#000000';
+     ctx.fillRect(0, 0, canvas.width, canvas.height);
+     ctx.font = 'bold 90px "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif';
+     ctx.fillStyle = '#ffffff';
+     ctx.textAlign = 'center';
+     ctx.textBaseline = 'middle';
+     ctx.fillText('新年快乐', canvas.width/2, canvas.height/2);
+
+     // 收集白色像素点
+     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+     const data = imageData.data;
+     const points = [];
+     const stride = 2; // 采样步长，控制密度
+     for (let y = 0; y < canvas.height; y += stride) {
+         for (let x = 0; x < canvas.width; x += stride) {
+             const index = (y * canvas.width + x) * 4;
+             if (data[index] > 128) { // 白色
+                 points.push({ x, y });
+             }
+         }
+     }
+
+     // 如果采集点不足，重复随机选取；如果太多，随机挑选particleCount个
+     const selected = [];
+     if (points.length >= particleCount) {
+         // 随机挑选
+         for (let i = 0; i < particleCount; i++) {
+             const idx = Math.floor(Math.random() * points.length);
+             selected.push(points[idx]);
+         }
+     } else {
+         // 不足则重复采样
+         for (let i = 0; i < particleCount; i++) {
+             const idx = i % points.length;
+             selected.push(points[idx]);
+         }
+     }
+
+     // 映射到3D坐标
+     const scaleX = 35 / canvas.width;   // 水平范围 -17.5 ~ 17.5
+     const scaleY = 18 / canvas.height;  // 垂直范围 -9 ~ 9
+     for (let i = 0; i < particleCount; i++) {
+         const p = selected[i];
+         // 映射：x: 0~width -> -17.5~17.5, y: 0~height -> 9~-9 (因为canvas y向下)
+         const x = (p.x / canvas.width - 0.5) * 35;
+         const y = (0.5 - p.y / canvas.height) * 18;
+         newYearPositions[i*3] = x;
+         newYearPositions[i*3+1] = y;
+         newYearPositions[i*3+2] = (Math.random() - 0.5) * 3; // 轻微Z轴散布
+     }
+ })();
+
+ // 初始位置设为随机散开
+ for (let i = 0; i < particleCount; i++) {
+     positions[i*3] = randomPositions[i*3];
+     positions[i*3+1] = randomPositions[i*3+1];
+     positions[i*3+2] = randomPositions[i*3+2];
  }
 
  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
- // 粒子材质
+ // 粒子材质 (初始粉色)
  const material = new THREE.PointsMaterial({
-     color: 0xff69b4, // 热粉色
+     color: 0xff69b4,
      size: 0.4,
      transparent: true,
-     opacity: 0.8,
+     opacity: 0.9,
      blending: THREE.AdditiveBlending
  });
 
@@ -92,11 +167,48 @@
  scene.add(particles);
 
  // --- 3. 交互逻辑变量 ---
- let gatherFactor = 0; // 0 = 完全散开, 1 = 完全聚合成爱心
- let targetGatherFactor = 0; // 目标聚合度，由手势控制
+ let gatherFactor = 0;         // 0 = 完全散开, 1 = 完全聚合
+ let targetGatherFactor = 0;
+ let currentMode = 0;          // 0=爱心,1=樱花,2=新年快乐
+ let targetMode = 0;
+ // 当前使用的目标位置数组 (引用)
+ let currentTargetPositions = heartPositions;
 
- // --- 4. MediaPipe Hands 配置 ---
+ // 模式对应的颜色
+ const modeColors = [0xff69b4, 0xffaabb, 0xff4400]; // 粉, 樱花粉, 橙红
+
+ // --- 4. MediaPipe Hands 手势识别 ---
  const videoElement = document.getElementsByClassName('input_video')[0];
+
+ // 手势分类函数: 返回 0(爱心),1(樱花),2(新年快乐)
+ function classifyGesture(landmarks) {
+     // 计算两点距离
+     const dist = (a, b) => Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2 + (a.z-b.z)**2);
+     // 手指索引: 食指(5,8), 中指(9,12), 无名指(13,16), 小指(17,20)
+     const fingers = [
+         { mcp:5, tip:8 },  // 食指
+         { mcp:9, tip:12 }, // 中指
+         { mcp:13, tip:16 }, // 无名指
+         { mcp:17, tip:20 } // 小指
+     ];
+     const wrist = landmarks[0];
+     const extended = [];
+
+     fingers.forEach(f => {
+         const mcp = landmarks[f.mcp];
+         const tip = landmarks[f.tip];
+         const fingerDist = dist(mcp, tip);
+         const handDist = dist(mcp, wrist);
+         const ratio = fingerDist / handDist;
+         extended.push(ratio > 0.45); // 阈值0.45可微调
+     });
+
+     // 判断数字: 1(仅食指), 2(食指+中指), 3(食+中+无名)
+     if (extended[0] && extended[1] && extended[2] && !extended[3]) return 2; // 3 -> 新年快乐
+     if (extended[0] && extended[1] && !extended[2] && !extended[3]) return 1; // 2 -> 樱花
+     if (extended[0] && !extended[1] && !extended[2] && !extended[3]) return 0; // 1 -> 爱心
+     return 0; // 默认爱心
+ }
 
  function onResults(results) {
      document.getElementById('loading').style.display = 'none';
@@ -104,54 +216,42 @@
      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
          const landmarks = results.multiHandLandmarks[0];
 
-         // 计算手掌开合程度
-         // 简单算法：计算拇指指尖(4)与其他四指指尖(8,12,16,20)到手腕(0)的平均距离
+         // --- 计算聚合因子 (开合度) ---
          const wrist = landmarks[0];
          const fingerTips = [4, 8, 12, 16, 20];
          let totalDist = 0;
-
          fingerTips.forEach(idx => {
              const tip = landmarks[idx];
-             const dist = Math.sqrt(
-                 Math.pow(tip.x - wrist.x, 2) + 
-                 Math.pow(tip.y - wrist.y, 2)
+             const d = Math.sqrt(
+                 (tip.x - wrist.x)**2 + (tip.y - wrist.y)**2
              );
-             totalDist += dist;
+             totalDist += d;
          });
-
          const avgDist = totalDist / 5;
-
-         // 经验阈值：
-         // 握拳时，指尖距离手腕很近 (avgDist 约 0.1 - 0.2)
-         // 张开时，指尖距离手腕较远 (avgDist 约 0.4 - 0.6)
-         // 我们做一个映射：握拳(distance small) -> 聚合(factor 1), 张开 -> 散开(factor 0)
-         
-         // 动态调整这些阈值以适应摄像头的距离
-         const closeThreshold = 0.25; 
+         const closeThreshold = 0.25;
          const openThreshold = 0.5;
-
          let normalized = (avgDist - closeThreshold) / (openThreshold - closeThreshold);
-         normalized = 1 - Math.min(Math.max(normalized, 0), 1); // 反转：距离越小(握拳)，值越大(1)
+         normalized = 1 - Math.min(Math.max(normalized, 0), 1);
+         targetGatherFactor = normalized;
 
-         targetGatherFactor = normalized; 
-
+         // --- 识别数字手势 ---
+         const mode = classifyGesture(landmarks);
+         targetMode = mode;
      } else {
-         // 如果没有检测到手，默认缓慢散开
          targetGatherFactor = 0;
+         targetMode = 0;
      }
  }
 
  const hands = new Hands({locateFile: (file) => {
      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
  }});
-
  hands.setOptions({
      maxNumHands: 1,
      modelComplexity: 1,
      minDetectionConfidence: 0.5,
      minTrackingConfidence: 0.5
  });
-
  hands.onResults(onResults);
 
  const cameraUtils = new Camera(videoElement, {
@@ -167,11 +267,22 @@
  function animate() {
      requestAnimationFrame(animate);
 
-     // 粒子自身旋转动画
-     particles.rotation.y += 0.002;
-
-     // 平滑过渡聚合系数 (Lerp)
+     // 平滑过渡聚合系数
      gatherFactor += (targetGatherFactor - gatherFactor) * 0.05;
+
+     // 平滑过渡模式 (避免频繁闪烁)
+     if (currentMode !== targetMode) {
+         // 直接切换目标位置数组，颜色渐变通过lerp也可以，这里简单切换
+         if (targetMode === 0) currentTargetPositions = heartPositions;
+         else if (targetMode === 1) currentTargetPositions = sakuraPositions;
+         else if (targetMode === 2) currentTargetPositions = newYearPositions;
+         currentMode = targetMode;
+         // 同时改变颜色 (也可以渐变，这里直接设置)
+         material.color.setHex(modeColors[currentMode]);
+     }
+
+     // 粒子自身旋转动画
+     particles.rotation.y += 0.001;
 
      // 更新粒子位置
      const posAttr = particles.geometry.attributes.position;
@@ -180,12 +291,12 @@
      for (let i = 0; i < particleCount; i++) {
          const idx = i * 3;
          
-         // 目标位置插值：从 randomPositions 过渡到 targetPositions
-         const tx = randomPositions[idx] + (targetPositions[idx] - randomPositions[idx]) * gatherFactor;
-         const ty = randomPositions[idx+1] + (targetPositions[idx+1] - randomPositions[idx+1]) * gatherFactor;
-         const tz = randomPositions[idx+2] + (targetPositions[idx+2] - randomPositions[idx+2]) * gatherFactor;
+         // 目标位置插值：从 randomPositions 过渡到 currentTargetPositions
+         const tx = randomPositions[idx] + (currentTargetPositions[idx] - randomPositions[idx]) * gatherFactor;
+         const ty = randomPositions[idx+1] + (currentTargetPositions[idx+1] - randomPositions[idx+1]) * gatherFactor;
+         const tz = randomPositions[idx+2] + (currentTargetPositions[idx+2] - randomPositions[idx+2]) * gatherFactor;
 
-         // 增加一点动态浮动效果
+         // 平滑移动到目标
          currentPositions[idx] += (tx - currentPositions[idx]) * 0.1;
          currentPositions[idx+1] += (ty - currentPositions[idx+1]) * 0.1;
          currentPositions[idx+2] += (tz - currentPositions[idx+2]) * 0.1;
@@ -197,7 +308,7 @@
 
  animate();
 
- // 窗口大小调整适配
+ // 窗口大小调整
  window.addEventListener('resize', () => {
      camera.aspect = window.innerWidth / window.innerHeight;
      camera.updateProjectionMatrix();
@@ -206,4 +317,3 @@
 </script>
 </body>
 </html>
-
