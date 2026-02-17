@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Three.js + MediaPipe：纯粒子新年快乐</title>
+    <title>Three.js + MediaPipe：纯粒子「新年快乐」最终版</title>
     <script type="importmap">
         {
             "imports": {
@@ -325,88 +325,89 @@
             });
         }
 
-// 纯粒子「新年快乐」文字 (握拳触发) - 调整版
-function createChineseCharacterParticles(position) {
-    // 创建一个离屏canvas绘制文字
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.font = 'bold 90px "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif';
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('新年快乐', canvas.width/2, canvas.height/2);
-    
-    // 获取像素数据
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    
-    // 增大步长以减少粒子数量，使文字更清晰
-    const step = 3; // 从2改为3
-    const positions = [];
-    const colors = [];
-    
-    // 文字区域范围映射到3D空间的大小 (宽度约3，高度约0.8)
-    const scaleX = 3.0 / canvas.width;
-    const scaleY = 0.8 / canvas.height;
-    
-    for (let y = 0; y < canvas.height; y += step) {
-        for (let x = 0; x < canvas.width; x += step) {
-            const index = (y * canvas.width + x) * 4;
-            // 如果像素亮度高（白色文字）
-            if (data[index] > 128) {
-                // 将canvas坐标映射到3D空间，使文字位于手心位置附近
-                const px = (x - canvas.width/2) * scaleX;
-                const py = -(y - canvas.height/2) * scaleY; // 反转Y
-                const pz = (Math.random() - 0.5) * 0.2; // 少量深度随机
-                
-                positions.push(position.x + px, position.y + py + 0.5, position.z + pz); // 向上偏移0.5使文字更明显
-                
-                // 随机金色/红色
-                const hue = 0.05 + Math.random() * 0.15;
-                const col = new THREE.Color().setHSL(hue, 1.0, 0.6);
-                colors.push(col.r, col.g, col.b);
+        // 纯粒子「新年快乐」文字 (握拳触发) - 最终优化版
+        function createChineseCharacterParticles(position) {
+            // 创建一个离屏canvas绘制文字
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.font = 'bold 90px "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('新年快乐', canvas.width/2, canvas.height/2);
+            
+            // 获取像素数据
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            // 步长5，粒子数量适中，使文字清晰
+            const step = 5;
+            const positions = [];
+            const colors = [];
+            
+            // 文字区域范围映射到3D空间的大小 (宽度2.5，高度0.7，紧凑不散乱)
+            const scaleX = 2.5 / canvas.width;
+            const scaleY = 0.7 / canvas.height;
+            
+            for (let y = 0; y < canvas.height; y += step) {
+                for (let x = 0; x < canvas.width; x += step) {
+                    const index = (y * canvas.width + x) * 4;
+                    // 如果像素亮度高（白色文字）
+                    if (data[index] > 128) {
+                        // 将canvas坐标映射到3D空间，使文字位于手心位置附近
+                        const px = (x - canvas.width/2) * scaleX;
+                        const py = -(y - canvas.height/2) * scaleY; // 反转Y
+                        const pz = (Math.random() - 0.5) * 0.2; // 少量深度随机
+                        
+                        positions.push(position.x + px, position.y + py + 0.5, position.z + pz); // 向上偏移0.5使文字更明显
+                        
+                        // 随机金色/红色
+                        const hue = 0.05 + Math.random() * 0.15;
+                        const col = new THREE.Color().setHSL(hue, 1.0, 0.6);
+                        colors.push(col.r, col.g, col.b);
+                    }
+                }
             }
+            
+            if (positions.length === 0) return;
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            
+            // 粒子大小0.18，保证稀疏但不失可见
+            const material = new THREE.PointsMaterial({ 
+                size: 0.18,
+                vertexColors: true, 
+                transparent: true, 
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            const particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+            
+            // 扩散速度0.015，缓慢消散，寿命3.0秒
+            const velocities = [];
+            for (let i = 0; i < positions.length/3; i++) {
+                velocities.push(new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.015,
+                    (Math.random() - 0.5) * 0.015,
+                    (Math.random() - 0.5) * 0.015
+                ));
+            }
+            
+            activeEffects.push({
+                type: 'chineseChars',
+                mesh: particles,
+                velocities: velocities,
+                life: 3.0,
+                age: 0
+            });
         }
-    }
-    
-    if (positions.length === 0) return;
-    
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    
-    const material = new THREE.PointsMaterial({ 
-        size: 0.12, // 稍微增大粒子尺寸，使文字更明显
-        vertexColors: true, 
-        transparent: true, 
-        blending: THREE.AdditiveBlending,
-        depthWrite: false
-    });
-    const particles = new THREE.Points(geometry, material);
-    scene.add(particles);
-    
-    // 降低扩散速度，延长存在时间
-    const velocities = [];
-    for (let i = 0; i < positions.length/3; i++) {
-        velocities.push(new THREE.Vector3(
-            (Math.random() - 0.5) * 0.015, // 从0.03降至0.015
-            (Math.random() - 0.5) * 0.015,
-            (Math.random() - 0.5) * 0.015
-        ));
-    }
-    
-    activeEffects.push({
-        type: 'chineseChars',
-        mesh: particles,
-        velocities: velocities,
-        life: 3.0, // 从2.0增加到3.0
-        age: 0
-    });
-}
 
         // --- 更新手部骨架 ---
         function updateHandSkeleton(landmarks, handedness = 'Right') {
@@ -454,7 +455,6 @@ function createChineseCharacterParticles(position) {
                     updateHandSkeleton(landmarks, handedness);
 
                     const gesture = recognizeGesture(landmarks);
-                    // 显示手势：1爱心，2烟花，3握拳粒子文字
                     gestureSpan.innerText = ['无','1 爱心','2 烟花','3 粒子文字'][gesture] || '无';
                     
                     if (gesture !== lastGesture && gesture !== 0) {
@@ -510,10 +510,10 @@ function createChineseCharacterParticles(position) {
                         positions[j*3] += eff.velocities[j].x;
                         positions[j*3+1] += eff.velocities[j].y;
                         positions[j*3+2] += eff.velocities[j].z;
-                        // 轻微扩散效果
-                        eff.velocities[j].x *= 1.01;
-                        eff.velocities[j].y *= 1.01;
-                        eff.velocities[j].z *= 1.01;
+                        // 轻微加速扩散
+                        eff.velocities[j].x *= 1.005;
+                        eff.velocities[j].y *= 1.005;
+                        eff.velocities[j].z *= 1.005;
                     }
                     eff.mesh.geometry.attributes.position.needsUpdate = true;
                     eff.mesh.material.opacity = eff.life;
