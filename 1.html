@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Three.js + MediaPipe：手势触发特效 (爱心·樱花·新年快乐)</title>
+    <title>Three.js + MediaPipe：手势触发特效 (爱心·樱花·新年快乐) 改进版</title>
     <script type="importmap">
         {
             "imports": {
@@ -84,13 +84,12 @@
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'https://unpkg.com/three@0.128.0/examples/jsm/controls/OrbitControls.js';
-        // 引入CSS2DRenderer用于显示文字特效
         import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.128.0/examples/jsm/renderers/CSS2DRenderer.js';
 
         // --- 配置参数 ---
         const NUM_LANDMARKS = 21;
         const SCALE = 5.0;
-        // 交互阈值 (与抓取相关)
+        // 交互阈值
         const PINCH_DIST_THRESH = 0.25;
         const RELEASE_DIST_THRESH = 0.35;
         const GRAB_DIST_THRESH = 0.7;
@@ -101,19 +100,19 @@
         const MIDDLE_TIP = 12;
         const RING_TIP = 16;
         const PINKY_TIP = 20;
-        // 指根关节 (用于判断手指伸直)
-        const INDEX_MCP = 5;   // 食指掌指关节
+        // 指根关节
+        const INDEX_MCP = 5;
         const MIDDLE_MCP = 9;
         const RING_MCP = 13;
         const PINKY_MCP = 17;
-        const THUMB_CMC = 1;   // 拇指腕掌关节 (近似)
+        // 拇指使用第二关节(2)作为基点
 
         // --- DOM 元素 ---
         const videoElement = document.getElementById('input-video');
         const handStatusSpan = document.getElementById('hand-status');
         const gestureSpan = document.getElementById('gesture-display');
 
-        // --- Three.js 场景初始化 (与之前相同) ---
+        // --- Three.js 场景初始化 (保持不变) ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x11161f);
 
@@ -121,7 +120,6 @@
         camera.position.set(0, 1, 10);
         camera.lookAt(0, 0, 0);
 
-        // WebGL渲染器
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -129,22 +127,20 @@
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(renderer.domElement);
 
-        // CSS2渲染器 (用于文字)
         const css2DRenderer = new CSS2DRenderer();
         css2DRenderer.setSize(window.innerWidth, window.innerHeight);
         css2DRenderer.domElement.style.position = 'absolute';
         css2DRenderer.domElement.style.top = '0px';
         css2DRenderer.domElement.style.left = '0px';
-        css2DRenderer.domElement.style.pointerEvents = 'none'; // 让文字不阻挡鼠标
+        css2DRenderer.domElement.style.pointerEvents = 'none';
         document.body.appendChild(css2DRenderer.domElement);
 
-        // 轨道控制器
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
         controls.target.set(0, 1, 0);
 
-        // --- 灯光、地面、星星 (同前) ---
+        // 灯光、地面、星星
         const ambientLight = new THREE.AmbientLight(0x404060);
         scene.add(ambientLight);
 
@@ -180,7 +176,6 @@
         groundPlane.receiveShadow = true;
         scene.add(groundPlane);
 
-        // 星星背景
         const starsGeometry = new THREE.BufferGeometry();
         const starsCount = 600;
         const starPositions = new Float32Array(starsCount * 3);
@@ -194,7 +189,7 @@
         const stars = new THREE.Points(starsGeometry, starsMaterial);
         scene.add(stars);
 
-        // --- 手部骨架 (球体 + 连线) ---
+        // --- 手部骨架 ---
         const jointMeshes = [];
         const colors = [0xff5555,0xffaa55,0xffff55,0x55ff55,0x55ffff,0x5555ff,0xaa55ff,0xff55aa,
                         0xff8888,0xffcc88,0xffff88,0x88ff88,0x88ffff,0x8888ff,0xcc88ff,0xff88cc,
@@ -219,155 +214,111 @@
         const lineSegments = new THREE.LineSegments(lineGeometry, lineMaterial);
         scene.add(lineSegments);
 
-        // --- 可交互物体 (同前) ---
+        // --- 可交互物体 ---
         const interactableObjects = [];
-        function randomColor() { return Math.floor(Math.random()*0xffffff); }
-        // 立方体1
         const cube1 = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.6,0.6), new THREE.MeshStandardMaterial({ color: 0xff8844, emissive:0x221100 }));
         cube1.castShadow = true; cube1.receiveShadow = true; cube1.position.set(1.5,0.2,-1.0);
         scene.add(cube1);
         interactableObjects.push({ mesh: cube1, type:'cube', originalEmissive:0x221100, isGrabbed:false });
-        // 立方体2
+        
         const cube2 = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), new THREE.MeshStandardMaterial({ color: 0x44aaff, emissive:0x002244 }));
         cube2.castShadow = true; cube2.receiveShadow = true; cube2.position.set(-1.2,0.3,-0.5);
         scene.add(cube2);
         interactableObjects.push({ mesh: cube2, originalEmissive:0x002244, isGrabbed:false });
-        // 球体1
+        
         const sphere1 = new THREE.Mesh(new THREE.SphereGeometry(0.4,32,16), new THREE.MeshStandardMaterial({ color: 0xaa66ff, emissive:0x220044 }));
         sphere1.castShadow = true; sphere1.receiveShadow = true; sphere1.position.set(0.5,0.4,-2.0);
         scene.add(sphere1);
         interactableObjects.push({ mesh: sphere1, originalEmissive:0x220044, isGrabbed:false });
-        // 球体2
+        
         const sphere2 = new THREE.Mesh(new THREE.SphereGeometry(0.3,24,12), new THREE.MeshStandardMaterial({ color: 0x66ff99, emissive:0x003322 }));
         sphere2.castShadow = true; sphere2.receiveShadow = true; sphere2.position.set(-0.8,-0.1,-2.5);
         scene.add(sphere2);
         interactableObjects.push({ mesh: sphere2, originalEmissive:0x003322, isGrabbed:false });
 
-        // 抓取状态变量
         let grabbedObject = null;
         let grabOffset = new THREE.Vector3();
 
-        // --- 手势识别相关 ---
-        let lastGesture = 0; // 0:无, 1:爱心, 2:樱花, 3:新年快乐
-        let gestureCooldown = false; // 简单防抖，但为了演示，每帧检测，触发特效时加上短暂冷却避免重复触发
-        // 特效管理器：存储当前活跃的特效对象，并在动画循环中更新
-        const activeEffects = [];
-
-        // --- 辅助函数：判断手指是否伸直 (基于归一化坐标，简单启发式) ---
-        // 使用 landmarks (原始0-1坐标) 来判断，因为映射后的坐标可能因深度变化而改变比例。
-        // 伸直条件：指尖y < 指根y (手心朝向相机时，指尖在上方，y值小；注意MediaPipe坐标y向下为正，但我们在映射时反转了，所以这里直接用原始y更简单)
-        // 为了简化，我们传入原始landmarks数组。
-        function isFingerStraight(landmarks, tipIdx, mcpIdx) {
-            // 如果指尖的y坐标小于指根的y坐标，视为伸直（因为y向下增大，伸直时指尖更靠上，即y更小）
-            return landmarks[tipIdx].y < landmarks[mcpIdx].y - 0.05; // 加一点阈值避免抖动
-        }
-        function isThumbStraight(landmarks) {
-            // 拇指伸直：指尖x大于指根x（右手？）但简单用距离，或者用拇指尖与拇指第二关节的向量，这里简化用x坐标
-            // 对于右手，拇指伸直时指尖x > 指根x；对于左手则相反。我们暂且不管左右手，统一用绝对值判断
-            // 更鲁棒：计算拇指尖与掌根的距离与拇指第二关节与掌根的距离比较。这里简单用y比较也行
-            return landmarks[THUMB_TIP].y < landmarks[2].y - 0.05; // 2是拇指第二关节
-        }
-
-        // --- 手势识别函数，返回1,2,3或0 ---
+        // --- 改进的手势识别函数 ---
         function recognizeGesture(landmarks) {
             if (!landmarks) return 0;
             
-            // 判断各手指伸直 (使用原始landmarks的y坐标)
-            const indexStraight = landmarks[INDEX_TIP].y < landmarks[INDEX_MCP].y - 0.05;
-            const middleStraight = landmarks[MIDDLE_TIP].y < landmarks[MIDDLE_MCP].y - 0.05;
-            const ringStraight = landmarks[RING_TIP].y < landmarks[RING_MCP].y - 0.05;
-            const pinkyStraight = landmarks[PINKY_TIP].y < landmarks[PINKY_MCP].y - 0.05;
-            const thumbStraight = landmarks[THUMB_TIP].y < landmarks[2].y - 0.05; // 2为拇指第二关节
-
-            // 手势1: 只有食指伸直
+            const THRESH = 0.12; // 伸直阈值（归一化坐标中的欧氏距离）
+            
+            function isFingerStraight(tipIdx, baseIdx) {
+                const tip = landmarks[tipIdx];
+                const base = landmarks[baseIdx];
+                const dx = tip.x - base.x;
+                const dy = tip.y - base.y;
+                const dz = tip.z - base.z;
+                const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                return dist > THRESH;
+            }
+            
+            const thumbStraight = isFingerStraight(THUMB_TIP, 2); // 拇指基点使用第二关节(2)
+            const indexStraight = isFingerStraight(INDEX_TIP, INDEX_MCP);
+            const middleStraight = isFingerStraight(MIDDLE_TIP, MIDDLE_MCP);
+            const ringStraight = isFingerStraight(RING_TIP, RING_MCP);
+            const pinkyStraight = isFingerStraight(PINKY_TIP, PINKY_MCP);
+            
+            // 手势1: 仅食指伸直
             if (indexStraight && !middleStraight && !ringStraight && !pinkyStraight && !thumbStraight) return 1;
-            // 手势2: 食指和中指伸直
+            // 手势2: 食指+中指伸直
             if (indexStraight && middleStraight && !ringStraight && !pinkyStraight && !thumbStraight) return 2;
-            // 手势3: 拇指、食指、中指伸直
+            // 手势3: 拇指+食指+中指伸直
             if (thumbStraight && indexStraight && middleStraight && !ringStraight && !pinkyStraight) return 3;
             
             return 0;
         }
 
-        // --- 特效生成函数 ---
+        // --- 特效生成函数 (保持不变) ---
+        const activeEffects = [];
         function createHeartEffect(position) {
-            // 爱心粒子：生成一些红色粒子，排成爱心形状并向外扩散
             const particleCount = 200;
             const geometry = new THREE.BufferGeometry();
             const positions = new Float32Array(particleCount * 3);
             const colors = new Float32Array(particleCount * 3);
             const color = new THREE.Color(0xff3366);
-            
             for (let i = 0; i < particleCount; i++) {
-                // 爱心参数方程: x = 16sin^3 t, y = 13cos t - 5cos 2t - 2cos 3t - cos 4t   (范围适中)
                 const t = Math.random() * Math.PI * 2;
                 const scale = 0.2;
                 const x = 16 * Math.pow(Math.sin(t), 3) * scale;
                 const y = (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t)) * scale;
                 const z = (Math.random() - 0.5) * 0.5;
-                // 加上随机偏移使其更自然
                 positions[i*3] = position.x + x + (Math.random()-0.5)*0.3;
                 positions[i*3+1] = position.y + y + (Math.random()-0.5)*0.3;
                 positions[i*3+2] = position.z + z;
-                
-                colors[i*3] = color.r;
-                colors[i*3+1] = color.g;
-                colors[i*3+2] = color.b;
+                colors[i*3] = color.r; colors[i*3+1] = color.g; colors[i*3+2] = color.b;
             }
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            
             const material = new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending });
             const particles = new THREE.Points(geometry, material);
             scene.add(particles);
-            
-            // 记录特效，让它逐渐消失并扩散
-            activeEffects.push({
-                type: 'heart',
-                mesh: particles,
-                life: 1.0, // 寿命1秒
-                velocity: new THREE.Vector3(0, 0.02, 0), // 向上飘
-                scaleVel: 0.02
-            });
+            activeEffects.push({ type:'heart', mesh:particles, life:1.0, velocity:new THREE.Vector3(0,0.02,0), scaleVel:0.02 });
         }
 
         function createSakuraEffect(position) {
-            // 樱花飘落：生成粉色粒子，缓慢下落并旋转
             const particleCount = 150;
             const geometry = new THREE.BufferGeometry();
             const positions = new Float32Array(particleCount * 3);
             const colors = new Float32Array(particleCount * 3);
-            
             for (let i = 0; i < particleCount; i++) {
-                positions[i*3] = position.x + (Math.random()-0.5) * 2;
-                positions[i*3+1] = position.y + (Math.random()-0.5) * 2;
-                positions[i*3+2] = position.z + (Math.random()-0.5) * 2;
-                
-                const pink = new THREE.Color().setHSL(0.95 + Math.random()*0.1, 0.8, 0.7);
-                colors[i*3] = pink.r;
-                colors[i*3+1] = pink.g;
-                colors[i*3+2] = pink.b;
+                positions[i*3] = position.x + (Math.random()-0.5)*2;
+                positions[i*3+1] = position.y + (Math.random()-0.5)*2;
+                positions[i*3+2] = position.z + (Math.random()-0.5)*2;
+                const pink = new THREE.Color().setHSL(0.95+Math.random()*0.1, 0.8, 0.7);
+                colors[i*3]=pink.r; colors[i*3+1]=pink.g; colors[i*3+2]=pink.b;
             }
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            
-            const material = new THREE.PointsMaterial({ size: 0.2, vertexColors: true, transparent: true, opacity: 1.0, blending: THREE.NormalBlending });
+            const material = new THREE.PointsMaterial({ size:0.2, vertexColors:true, transparent:true, opacity:1.0 });
             const particles = new THREE.Points(geometry, material);
             scene.add(particles);
-            
-            // 每个粒子附带随机速度，我们简单整体飘落
-            activeEffects.push({
-                type: 'sakura',
-                mesh: particles,
-                life: 2.0,
-                velocity: new THREE.Vector3(0, -0.03, 0.01),
-                rotSpeed: 0.01
-            });
+            activeEffects.push({ type:'sakura', mesh:particles, life:2.0, velocity:new THREE.Vector3(0,-0.03,0.01), rotSpeed:0.01 });
         }
 
         function createNewYearEffect(position) {
-            // 烟花 + 文字 "新年快乐"
-            // 文字使用CSS2D
             const div = document.createElement('div');
             div.textContent = '新年快乐 🎉';
             div.style.color = '#ffdd44';
@@ -379,12 +330,10 @@
             div.style.borderRadius = '60px';
             div.style.border = '3px solid gold';
             div.style.whiteSpace = 'nowrap';
-            
             const label = new CSS2DObject(div);
             label.position.copy(position.clone().add(new THREE.Vector3(0,1.5,0)));
             scene.add(label);
             
-            // 烟花粒子：彩色粒子爆炸
             const particleCount = 300;
             const geometry = new THREE.BufferGeometry();
             const positions = new Float32Array(particleCount * 3);
@@ -401,28 +350,19 @@
                 positions[i*3+1] = position.y;
                 positions[i*3+2] = position.z;
                 const col = new THREE.Color().setHSL(Math.random(), 1.0, 0.6);
-                colors[i*3] = col.r;
-                colors[i*3+1] = col.g;
-                colors[i*3+2] = col.b;
+                colors[i*3]=col.r; colors[i*3+1]=col.g; colors[i*3+2]=col.b;
                 velocities.push(new THREE.Vector3(vx, vy, vz));
             }
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            const pmat = new THREE.PointsMaterial({ size: 0.2, vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false });
+            const pmat = new THREE.PointsMaterial({ size:0.2, vertexColors:true, blending:THREE.AdditiveBlending, depthWrite:false });
             const fireworks = new THREE.Points(geometry, pmat);
             scene.add(fireworks);
             
-            activeEffects.push({
-                type: 'newyear',
-                label: label,
-                particles: fireworks,
-                velocities: velocities,
-                life: 2.5,
-                age: 0
-            });
+            activeEffects.push({ type:'newyear', label:label, particles:fireworks, velocities:velocities, life:2.5, age:0 });
         }
 
-        // --- 更新手部骨架 (同前) ---
+        // --- 更新手部骨架 ---
         function updateHandSkeleton(landmarks, handedness = 'Right') {
             if (!landmarks || landmarks.length !== NUM_LANDMARKS) {
                 for (let i = 0; i < NUM_LANDMARKS; i++) jointMeshes[i].position.set(0,0,-10);
@@ -457,7 +397,7 @@
             lineGeometry.setDrawRange(0, numSegments*2);
         }
 
-        // --- MediaPipe 初始化 (同前) ---
+        // --- MediaPipe 初始化 ---
         async function initMediaPipe() {
             const hands = new window.Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
             hands.setOptions({ maxNumHands:1, modelComplexity:1, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
@@ -467,13 +407,11 @@
                     const handedness = results.multiHandedness?.[0]?.label || 'Unknown';
                     updateHandSkeleton(landmarks, handedness);
 
-                    // 手势识别 (使用原始landmarks)
+                    // 使用改进的手势识别
                     const gesture = recognizeGesture(landmarks);
                     gestureSpan.innerText = ['无','1 爱心','2 樱花','3 新年快乐'][gesture] || '无';
                     
-                    // 触发特效 (避免连续触发，简单冷却：手势变化时触发)
                     if (gesture !== lastGesture && gesture !== 0) {
-                        // 获取当前手部中心位置 (使用手腕点作为基准)
                         const wristPos = jointMeshes[0].position.clone();
                         if (gesture === 1) createHeartEffect(wristPos);
                         else if (gesture === 2) createSakuraEffect(wristPos);
@@ -489,9 +427,10 @@
             const camera = new window.Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width:640, height:480 });
             camera.start().catch(e => { handStatusSpan.innerText = '摄像头错误'; });
         }
+        let lastGesture = 0;
         initMediaPipe();
 
-        // --- 抓取交互更新 (同前) ---
+        // --- 抓取交互更新 ---
         function updateInteraction() {
             if (jointMeshes[0].position.z > -9) {
                 const thumbPos = jointMeshes[THUMB_TIP].position.clone();
@@ -524,7 +463,6 @@
                     }
                 }
 
-                // 高亮触碰
                 interactableObjects.forEach(obj => {
                     if (obj.isGrabbed) return;
                     const distToIndex = indexPos.distanceTo(obj.mesh.position);
@@ -544,11 +482,11 @@
             }
         }
 
-        // --- 更新特效动画 ---
+        // --- 特效动画更新 ---
         function updateEffects(deltaTime) {
             for (let i = activeEffects.length-1; i >= 0; i--) {
                 const eff = activeEffects[i];
-                eff.life -= deltaTime * 0.5; // 粗略时间因子 (假设60fps，deltaTime约0.016，但这里简化)
+                eff.life -= deltaTime * 0.5;
                 if (eff.life <= 0) {
                     if (eff.mesh) scene.remove(eff.mesh);
                     if (eff.label) scene.remove(eff.label);
@@ -558,7 +496,6 @@
                 }
 
                 if (eff.type === 'heart') {
-                    // 扩散和淡出
                     const scale = 1 + (1 - eff.life) * 2;
                     eff.mesh.scale.set(scale, scale, scale);
                     eff.mesh.material.opacity = eff.life;
@@ -568,7 +505,7 @@
                     eff.mesh.position.add(eff.velocity);
                     eff.mesh.material.opacity = eff.life * 0.8;
                 } else if (eff.type === 'newyear') {
-                    eff.age += 0.016;
+                    eff.age += deltaTime;
                     if (eff.label) {
                         eff.label.position.y += 0.02;
                         eff.label.element.style.opacity = eff.life;
@@ -579,7 +516,6 @@
                             positions[j*3] += eff.velocities[j].x;
                             positions[j*3+1] += eff.velocities[j].y;
                             positions[j*3+2] += eff.velocities[j].z;
-                            // 简单重力
                             eff.velocities[j].y -= 0.001;
                         }
                         eff.particles.geometry.attributes.position.needsUpdate = true;
@@ -589,7 +525,7 @@
             }
         }
 
-        // --- 动画循环 (整合渲染) ---
+        // --- 动画循环 ---
         let clock = new THREE.Clock();
         function animate() {
             requestAnimationFrame(animate);
@@ -601,15 +537,11 @@
             updateEffects(delta);
 
             controls.update();
-
-            // 渲染 WebGL 内容
             renderer.render(scene, camera);
-            // 渲染 CSS2D 内容 (必须单独调用)
             css2DRenderer.render(scene, camera);
         }
         animate();
 
-        // --- 窗口自适应 ---
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
