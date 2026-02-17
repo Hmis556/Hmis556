@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Three.js + MediaPipe：新年手势特效 (握拳新年快乐，二指烟花)</title>
+    <title>Three.js + MediaPipe：新年手势特效 (无物体，优化正面识别)</title>
     <script type="importmap">
         {
             "imports": {
@@ -81,7 +81,7 @@
         <span style="color:#ffaa44; margin-left:12px;">1=❤️ 2=🎆烟花 3=👊新年快乐</span>
     </div>
     <div id="hint">
-        Three.js + MediaPipe | 捏合抓取 | 二指烟花 | 握拳新年快乐
+        Three.js + MediaPipe | 正面识别优化 | 二指烟花 | 握拳新年快乐
     </div>
 
     <script type="module">
@@ -92,10 +92,6 @@
         // --- 配置参数 ---
         const NUM_LANDMARKS = 21;
         const SCALE = 5.0;
-        // 交互阈值
-        const PINCH_DIST_THRESH = 0.25;
-        const RELEASE_DIST_THRESH = 0.35;
-        const GRAB_DIST_THRESH = 0.7;
 
         // 指尖索引
         const THUMB_TIP = 4;
@@ -126,8 +122,7 @@
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.enabled = false; // 无需阴影
         document.body.appendChild(renderer.domElement);
 
         const css2DRenderer = new CSS2DRenderer();
@@ -149,36 +144,16 @@
 
         const dirLight = new THREE.DirectionalLight(0xffccaa, 1.2);
         dirLight.position.set(2, 5, 5);
-        dirLight.castShadow = true;
-        dirLight.receiveShadow = true;
-        dirLight.shadow.mapSize.width = 1024;
-        dirLight.shadow.mapSize.height = 1024;
-        const d = 8;
-        dirLight.shadow.camera.left = -d;
-        dirLight.shadow.camera.right = d;
-        dirLight.shadow.camera.top = d;
-        dirLight.shadow.camera.bottom = -d;
-        dirLight.shadow.camera.near = 2;
-        dirLight.shadow.camera.far = 20;
         scene.add(dirLight);
 
         const fillLight = new THREE.PointLight(0xff8844, 0.8);
         fillLight.position.set(-2, 2, 3);
         scene.add(fillLight);
 
-        // 地面网格 (暗金色)
+        // 地面网格 (暗金色) - 保留作为参考
         const gridHelper = new THREE.GridHelper(12, 20, 0xffaa33, 0x883333);
         gridHelper.position.y = -1.2;
         scene.add(gridHelper);
-
-        const groundPlane = new THREE.Mesh(
-            new THREE.PlaneGeometry(12, 12),
-            new THREE.ShadowMaterial({ color: 0x331111, opacity: 0.6 })
-        );
-        groundPlane.rotation.x = -Math.PI / 2;
-        groundPlane.position.y = -1.2;
-        groundPlane.receiveShadow = true;
-        scene.add(groundPlane);
 
         // --- 新年漂浮粒子 (金色/红色) ---
         const festiveParticlesGeom = new THREE.BufferGeometry();
@@ -212,7 +187,6 @@
             starPositions[i*3] = (Math.random() - 0.5) * 50;
             starPositions[i*3+1] = (Math.random() - 0.5) * 30;
             starPositions[i*3+2] = (Math.random() - 0.5) * 50 - 20;
-            // 金色或红色
             const isGold = Math.random() > 0.5;
             starColors[i*3] = isGold ? 1.0 : 0.9;
             starColors[i*3+1] = isGold ? 0.8 : 0.2;
@@ -234,7 +208,7 @@
         for (let i = 0; i < NUM_LANDMARKS; i++) {
             const material = new THREE.MeshStandardMaterial({ color: colors[i%colors.length], emissive: 0x222222 });
             const sphere = new THREE.Mesh(sphereGeom, material);
-            sphere.castShadow = true;
+            sphere.castShadow = false;
             sphere.receiveShadow = false;
             sphere.position.set(0,0,-10);
             scene.add(sphere);
@@ -249,40 +223,15 @@
         const lineSegments = new THREE.LineSegments(lineGeometry, lineMaterial);
         scene.add(lineSegments);
 
-        // --- 可交互物体 (保持不变) ---
-        const interactableObjects = [];
-        const cube1 = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.6,0.6), new THREE.MeshStandardMaterial({ color: 0xff8844, emissive:0x221100 }));
-        cube1.castShadow = true; cube1.receiveShadow = true; cube1.position.set(1.5,0.2,-1.0);
-        scene.add(cube1);
-        interactableObjects.push({ mesh: cube1, type:'cube', originalEmissive:0x221100, isGrabbed:false });
-        
-        const cube2 = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), new THREE.MeshStandardMaterial({ color: 0x44aaff, emissive:0x002244 }));
-        cube2.castShadow = true; cube2.receiveShadow = true; cube2.position.set(-1.2,0.3,-0.5);
-        scene.add(cube2);
-        interactableObjects.push({ mesh: cube2, originalEmissive:0x002244, isGrabbed:false });
-        
-        const sphere1 = new THREE.Mesh(new THREE.SphereGeometry(0.4,32,16), new THREE.MeshStandardMaterial({ color: 0xaa66ff, emissive:0x220044 }));
-        sphere1.castShadow = true; sphere1.receiveShadow = true; sphere1.position.set(0.5,0.4,-2.0);
-        scene.add(sphere1);
-        interactableObjects.push({ mesh: sphere1, originalEmissive:0x220044, isGrabbed:false });
-        
-        const sphere2 = new THREE.Mesh(new THREE.SphereGeometry(0.3,24,12), new THREE.MeshStandardMaterial({ color: 0x66ff99, emissive:0x003322 }));
-        sphere2.castShadow = true; sphere2.receiveShadow = true; sphere2.position.set(-0.8,-0.1,-2.5);
-        scene.add(sphere2);
-        interactableObjects.push({ mesh: sphere2, originalEmissive:0x003322, isGrabbed:false });
-
-        let grabbedObject = null;
-        let grabOffset = new THREE.Vector3();
-
         // --- 特效存储 ---
         const activeEffects = [];
 
-        // --- 手势识别函数 (双阈值，握拳阈值放宽) ---
+        // --- 手势识别函数 (优化阈值，正面易识别) ---
         function recognizeGesture(landmarks) {
             if (!landmarks) return 0;
             
-            const STRAIGHT_THRESH = 0.13; // 伸直阈值
-            const BENT_THRESH = 0.09;     // 弯曲阈值 (调高以便握拳更容易触发)
+            const STRAIGHT_THRESH = 0.11; // 降低伸直阈值，正面更容易达到
+            const BENT_THRESH = 0.10;     // 提高弯曲阈值，确保弯曲手指仍被判定为弯曲
             
             function fingerDist(tipIdx, baseIdx) {
                 const tip = landmarks[tipIdx];
@@ -368,7 +317,6 @@
                 positions[i*3] = position.x;
                 positions[i*3+1] = position.y;
                 positions[i*3+2] = position.z;
-                // 金色/红色调
                 const hue = 0.03 + Math.random() * 0.1; // 红橙色范围
                 const col = new THREE.Color().setHSL(hue, 1.0, 0.6);
                 colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
@@ -512,58 +460,6 @@
         let lastGesture = 0;
         initMediaPipe();
 
-        // --- 抓取交互更新 ---
-        function updateInteraction() {
-            if (jointMeshes[0].position.z > -9) {
-                const thumbPos = jointMeshes[THUMB_TIP].position.clone();
-                const indexPos = jointMeshes[INDEX_TIP].position.clone();
-                const pinchDist = thumbPos.distanceTo(indexPos);
-
-                if (grabbedObject) {
-                    if (pinchDist > RELEASE_DIST_THRESH) {
-                        grabbedObject.mesh.material.emissive.setHex(grabbedObject.originalEmissive);
-                        grabbedObject.isGrabbed = false;
-                        grabbedObject = null;
-                    } else {
-                        const targetPos = indexPos.clone().add(grabOffset);
-                        grabbedObject.mesh.position.copy(targetPos);
-                    }
-                } else {
-                    if (pinchDist < PINCH_DIST_THRESH) {
-                        let closest = null, minDist = Infinity;
-                        interactableObjects.forEach(obj => {
-                            if (obj.isGrabbed) return;
-                            const d = indexPos.distanceTo(obj.mesh.position);
-                            if (d < GRAB_DIST_THRESH && d < minDist) { minDist = d; closest = obj; }
-                        });
-                        if (closest) {
-                            grabbedObject = closest;
-                            grabbedObject.isGrabbed = true;
-                            grabOffset.copy(grabbedObject.mesh.position).sub(indexPos);
-                            grabbedObject.mesh.material.emissive.setHex(0x444444);
-                        }
-                    }
-                }
-
-                interactableObjects.forEach(obj => {
-                    if (obj.isGrabbed) return;
-                    const distToIndex = indexPos.distanceTo(obj.mesh.position);
-                    const distToThumb = thumbPos.distanceTo(obj.mesh.position);
-                    if (Math.min(distToIndex, distToThumb) < 0.5) {
-                        obj.mesh.material.emissive.setHex(0x553300);
-                    } else {
-                        obj.mesh.material.emissive.setHex(obj.originalEmissive);
-                    }
-                });
-            } else {
-                if (grabbedObject) {
-                    grabbedObject.mesh.material.emissive.setHex(grabbedObject.originalEmissive);
-                    grabbedObject.isGrabbed = false;
-                    grabbedObject = null;
-                }
-            }
-        }
-
         // --- 特效动画更新 ---
         function updateEffects(deltaTime) {
             for (let i = activeEffects.length-1; i >= 0; i--) {
@@ -624,7 +520,6 @@
             festiveParticles.rotation.y += 0.0005;
             stars.rotation.y += 0.0002;
             
-            updateInteraction();
             updateEffects(delta);
 
             controls.update();
