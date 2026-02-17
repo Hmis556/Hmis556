@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Three.js + MediaPipe：手势触发特效 (阈值优化版)</title>
+    <title>Three.js + MediaPipe：手势触发特效 (握拳→新年快乐)</title>
     <script type="importmap">
         {
             "imports": {
@@ -75,10 +75,10 @@
     </div>
     <div id="gesture-hint">
         🖐️ 手势: <span id="gesture-display">无</span> 
-        <span style="color:#aaa; margin-left:12px;">1=❤️ 2=🌸 3=🎉新年快乐</span>
+        <span style="color:#aaa; margin-left:12px;">1=❤️ 2=🌸 3=握拳🎉新年快乐</span>
     </div>
     <div id="hint">
-        Three.js + MediaPipe | 抓取物体(捏合) | 手势触发特效 (阈值优化版)
+        Three.js + MediaPipe | 抓取物体(捏合) | 握拳触发新年快乐
     </div>
 
     <script type="module">
@@ -239,7 +239,7 @@
         let grabbedObject = null;
         let grabOffset = new THREE.Vector3();
 
-        // --- 改进的手势识别函数 (双阈值，严格弯曲) ---
+        // --- 改进的手势识别函数 (双阈值，手势3=握拳) ---
         function recognizeGesture(landmarks) {
             if (!landmarks) return 0;
             
@@ -281,9 +281,8 @@
             if (indexStraight && middleStraight && !ringStraight && !pinkyStraight && 
                 thumbBent && ringBent && pinkyBent) return 2;
             
-            // 手势3: 拇指+食指+中指伸直，无名指+小指必须弯曲
-            if (thumbStraight && indexStraight && middleStraight && !ringStraight && !pinkyStraight && 
-                ringBent && pinkyBent) return 3;
+            // 手势3: 握拳（所有手指弯曲）
+            if (thumbBent && indexBent && middleBent && ringBent && pinkyBent) return 3;
             
             return 0;
         }
@@ -426,13 +425,14 @@
 
                     // 使用改进的手势识别
                     const gesture = recognizeGesture(landmarks);
-                    gestureSpan.innerText = ['无','1 爱心','2 樱花','3 新年快乐'][gesture] || '无';
+                    // 更新显示：1=爱心, 2=樱花, 3=握拳
+                    gestureSpan.innerText = ['无','1 爱心','2 樱花','3 握拳'][gesture] || '无';
                     
                     if (gesture !== lastGesture && gesture !== 0) {
                         const wristPos = jointMeshes[0].position.clone();
                         if (gesture === 1) createHeartEffect(wristPos);
                         else if (gesture === 2) createSakuraEffect(wristPos);
-                        else if (gesture === 3) createNewYearEffect(wristPos);
+                        else if (gesture === 3) createNewYearEffect(wristPos); // 握拳触发新年快乐
                     }
                     lastGesture = gesture;
                 } else {
