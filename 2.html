@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Three.js + MediaPipe：新年手势特效 (无物体，优化正面识别)</title>
+    <title>Three.js + MediaPipe：新年手势特效 (握拳纯粒子烟花)</title>
     <script type="importmap">
         {
             "imports": {
@@ -78,16 +78,15 @@
     </div>
     <div id="gesture-hint">
         🎇 手势: <span id="gesture-display">无</span> 
-        <span style="color:#ffaa44; margin-left:12px;">1=❤️ 2=🎆烟花 3=👊新年快乐</span>
+        <span style="color:#ffaa44; margin-left:12px;">1=❤️ 2=🎆烟花 3=👊纯粒子烟花</span>
     </div>
     <div id="hint">
-        Three.js + MediaPipe | 正面识别优化 | 二指烟花 | 握拳新年快乐
+        Three.js + MediaPipe | 阈值优化 | 二指烟花 | 握拳纯粒子
     </div>
 
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'https://unpkg.com/three@0.128.0/examples/jsm/controls/OrbitControls.js';
-        import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.128.0/examples/jsm/renderers/CSS2DRenderer.js';
 
         // --- 配置参数 ---
         const NUM_LANDMARKS = 21;
@@ -122,16 +121,7 @@
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.shadowMap.enabled = false; // 无需阴影
         document.body.appendChild(renderer.domElement);
-
-        const css2DRenderer = new CSS2DRenderer();
-        css2DRenderer.setSize(window.innerWidth, window.innerHeight);
-        css2DRenderer.domElement.style.position = 'absolute';
-        css2DRenderer.domElement.style.top = '0px';
-        css2DRenderer.domElement.style.left = '0px';
-        css2DRenderer.domElement.style.pointerEvents = 'none';
-        document.body.appendChild(css2DRenderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -208,8 +198,6 @@
         for (let i = 0; i < NUM_LANDMARKS; i++) {
             const material = new THREE.MeshStandardMaterial({ color: colors[i%colors.length], emissive: 0x222222 });
             const sphere = new THREE.Mesh(sphereGeom, material);
-            sphere.castShadow = false;
-            sphere.receiveShadow = false;
             sphere.position.set(0,0,-10);
             scene.add(sphere);
             jointMeshes.push(sphere);
@@ -226,12 +214,12 @@
         // --- 特效存储 ---
         const activeEffects = [];
 
-        // --- 手势识别函数 (优化阈值，正面易识别) ---
+        // --- 手势识别函数 (阈值更严格，减少误触) ---
         function recognizeGesture(landmarks) {
             if (!landmarks) return 0;
             
-            const STRAIGHT_THRESH = 0.11; // 降低伸直阈值，正面更容易达到
-            const BENT_THRESH = 0.10;     // 提高弯曲阈值，确保弯曲手指仍被判定为弯曲
+            const STRAIGHT_THRESH = 0.12; // 伸直阈值 (需更直)
+            const BENT_THRESH = 0.09;     // 弯曲阈值 (需更弯)
             
             function fingerDist(tipIdx, baseIdx) {
                 const tip = landmarks[tipIdx];
@@ -300,7 +288,7 @@
             activeEffects.push({ type:'heart', mesh:particles, life:1.0, velocity:new THREE.Vector3(0,0.02,0) });
         }
 
-        // 纯烟花特效 (无文字)
+        // 烟花特效 (用于手势2)
         function createFireworksEffect(position) {
             const particleCount = 300;
             const geometry = new THREE.BufferGeometry();
@@ -337,26 +325,9 @@
             });
         }
 
-        // 新年快乐特效 (文字+烟花)
-        function createNewYearEffect(position) {
-            // 文字
-            const div = document.createElement('div');
-            div.textContent = '新年快乐 🎉';
-            div.style.color = '#ffdd44';
-            div.style.fontSize = '80px';
-            div.style.fontWeight = 'bold';
-            div.style.textShadow = '0 0 20px red, 0 0 30px gold';
-            div.style.background = 'rgba(80, 20, 20, 0.5)';
-            div.style.padding = '20px 40px';
-            div.style.borderRadius = '60px';
-            div.style.border = '3px solid #ffaa00';
-            div.style.whiteSpace = 'nowrap';
-            const label = new CSS2DObject(div);
-            label.position.copy(position.clone().add(new THREE.Vector3(0,1.5,0)));
-            scene.add(label);
-            
-            // 烟花粒子
-            const particleCount = 300;
+        // 握拳特效 (纯粒子烟花，无文字)
+        function createFistFireworksEffect(position) {
+            const particleCount = 400; // 更多粒子
             const geometry = new THREE.BufferGeometry();
             const positions = new Float32Array(particleCount * 3);
             const colors = new Float32Array(particleCount * 3);
@@ -364,30 +335,30 @@
             for (let i = 0; i < particleCount; i++) {
                 const angle1 = Math.random() * Math.PI * 2;
                 const angle2 = Math.random() * Math.PI * 2;
-                const speed = 0.1 + Math.random() * 0.2;
+                const speed = 0.15 + Math.random() * 0.3;
                 const vx = Math.sin(angle1) * Math.cos(angle2) * speed;
                 const vy = Math.sin(angle1) * Math.sin(angle2) * speed;
                 const vz = Math.cos(angle1) * speed;
                 positions[i*3] = position.x;
                 positions[i*3+1] = position.y;
                 positions[i*3+2] = position.z;
-                const hue = Math.random() * 0.15; // 红黄范围
+                // 更丰富的颜色：金色、红色、橙色、黄色
+                const hue = 0.05 + Math.random() * 0.15;
                 const col = new THREE.Color().setHSL(hue, 1.0, 0.6);
                 colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
                 velocities.push(new THREE.Vector3(vx, vy, vz));
             }
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            const pmat = new THREE.PointsMaterial({ size:0.2, vertexColors:true, blending:THREE.AdditiveBlending, depthWrite:false });
-            const fireworks = new THREE.Points(geometry, pmat);
-            scene.add(fireworks);
+            const material = new THREE.PointsMaterial({ size: 0.22, vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false });
+            const particles = new THREE.Points(geometry, material);
+            scene.add(particles);
             
             activeEffects.push({
-                type: 'newyear',
-                label: label,
-                particles: fireworks,
+                type: 'fistFireworks',
+                mesh: particles,
                 velocities: velocities,
-                life: 2.5,
+                life: 2.0, // 寿命更长
                 age: 0
             });
         }
@@ -438,14 +409,14 @@
                     updateHandSkeleton(landmarks, handedness);
 
                     const gesture = recognizeGesture(landmarks);
-                    // 显示手势：1爱心，2烟花，3握拳
-                    gestureSpan.innerText = ['无','1 爱心','2 烟花','3 握拳'][gesture] || '无';
+                    // 显示手势：1爱心，2烟花，3握拳纯粒子
+                    gestureSpan.innerText = ['无','1 爱心','2 烟花','3 握拳(粒子)'][gesture] || '无';
                     
                     if (gesture !== lastGesture && gesture !== 0) {
                         const wristPos = jointMeshes[0].position.clone();
                         if (gesture === 1) createHeartEffect(wristPos);
                         else if (gesture === 2) createFireworksEffect(wristPos);
-                        else if (gesture === 3) createNewYearEffect(wristPos);
+                        else if (gesture === 3) createFistFireworksEffect(wristPos);
                     }
                     lastGesture = gesture;
                 } else {
@@ -467,8 +438,6 @@
                 eff.life -= deltaTime * 0.5;
                 if (eff.life <= 0) {
                     if (eff.mesh) scene.remove(eff.mesh);
-                    if (eff.label) scene.remove(eff.label);
-                    if (eff.particles) scene.remove(eff.particles);
                     activeEffects.splice(i,1);
                     continue;
                 }
@@ -478,7 +447,7 @@
                     eff.mesh.scale.set(scale, scale, scale);
                     eff.mesh.material.opacity = eff.life;
                     eff.mesh.position.add(eff.velocity);
-                } else if (eff.type === 'fireworks') {
+                } else if (eff.type === 'fireworks' || eff.type === 'fistFireworks') {
                     eff.age += deltaTime;
                     const positions = eff.mesh.geometry.attributes.position.array;
                     for (let j = 0; j < positions.length/3; j++) {
@@ -489,23 +458,6 @@
                     }
                     eff.mesh.geometry.attributes.position.needsUpdate = true;
                     eff.mesh.material.opacity = eff.life;
-                } else if (eff.type === 'newyear') {
-                    eff.age += deltaTime;
-                    if (eff.label) {
-                        eff.label.position.y += 0.02;
-                        eff.label.element.style.opacity = eff.life;
-                    }
-                    if (eff.particles) {
-                        const positions = eff.particles.geometry.attributes.position.array;
-                        for (let j = 0; j < positions.length/3; j++) {
-                            positions[j*3] += eff.velocities[j].x;
-                            positions[j*3+1] += eff.velocities[j].y;
-                            positions[j*3+2] += eff.velocities[j].z;
-                            eff.velocities[j].y -= 0.001;
-                        }
-                        eff.particles.geometry.attributes.position.needsUpdate = true;
-                        eff.particles.material.opacity = eff.life;
-                    }
                 }
             }
         }
@@ -516,7 +468,6 @@
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
 
-            // 漂浮粒子缓慢旋转
             festiveParticles.rotation.y += 0.0005;
             stars.rotation.y += 0.0002;
             
@@ -524,7 +475,6 @@
 
             controls.update();
             renderer.render(scene, camera);
-            css2DRenderer.render(scene, camera);
         }
         animate();
 
@@ -532,7 +482,6 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            css2DRenderer.setSize(window.innerWidth, window.innerHeight);
         });
     </script>
 </body>
