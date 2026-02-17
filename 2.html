@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Three.js + MediaPipe：手势触发特效 (改进版-防误判)</title>
+    <title>Three.js + MediaPipe：手势触发特效 (阈值优化版)</title>
     <script type="importmap">
         {
             "imports": {
@@ -78,7 +78,7 @@
         <span style="color:#aaa; margin-left:12px;">1=❤️ 2=🌸 3=🎉新年快乐</span>
     </div>
     <div id="hint">
-        Three.js + MediaPipe | 抓取物体(捏合) | 手势触发特效 (改进版)
+        Three.js + MediaPipe | 抓取物体(捏合) | 手势触发特效 (阈值优化版)
     </div>
 
     <script type="module">
@@ -112,7 +112,7 @@
         const handStatusSpan = document.getElementById('hand-status');
         const gestureSpan = document.getElementById('gesture-display');
 
-        // --- Three.js 场景初始化 (与之前相同) ---
+        // --- Three.js 场景初始化 (保持不变) ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x11161f);
 
@@ -239,12 +239,12 @@
         let grabbedObject = null;
         let grabOffset = new THREE.Vector3();
 
-        // --- 改进的手势识别函数 (双阈值) ---
+        // --- 改进的手势识别函数 (双阈值，严格弯曲) ---
         function recognizeGesture(landmarks) {
             if (!landmarks) return 0;
             
-            const STRAIGHT_THRESH = 0.12; // 伸直阈值
-            const BENT_THRESH = 0.08;     // 弯曲阈值
+            const STRAIGHT_THRESH = 0.13; // 伸直阈值
+            const BENT_THRESH = 0.07;     // 弯曲阈值
             
             function fingerDist(tipIdx, baseIdx) {
                 const tip = landmarks[tipIdx];
@@ -261,14 +261,12 @@
             const ringDist = fingerDist(RING_TIP, RING_MCP);
             const pinkyDist = fingerDist(PINKY_TIP, PINKY_MCP);
             
-            // 伸直判断
             const thumbStraight = thumbDist > STRAIGHT_THRESH;
             const indexStraight = indexDist > STRAIGHT_THRESH;
             const middleStraight = middleDist > STRAIGHT_THRESH;
             const ringStraight = ringDist > STRAIGHT_THRESH;
             const pinkyStraight = pinkyDist > STRAIGHT_THRESH;
             
-            // 弯曲判断
             const thumbBent = thumbDist < BENT_THRESH;
             const indexBent = indexDist < BENT_THRESH;
             const middleBent = middleDist < BENT_THRESH;
