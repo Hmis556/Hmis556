@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Three.js + MediaPipe：手势触发特效 (握拳→新年快乐)</title>
+    <title>Three.js + MediaPipe：新年手势特效 (握拳新年快乐，二指烟花)</title>
     <script type="importmap">
         {
             "imports": {
@@ -26,18 +26,19 @@
             position: absolute;
             top: 20px;
             left: 20px;
-            background: rgba(20, 20, 30, 0.8);
-            color: white;
+            background: rgba(40, 10, 10, 0.85);
+            color: #ffdd99;
             padding: 12px 20px;
             border-radius: 30px;
             backdrop-filter: blur(5px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border: 2px solid #ffaa00;
+            box-shadow: 0 0 20px rgba(255, 200, 0, 0.5);
             z-index: 100;
             font-size: 16px;
             pointer-events: none;
         }
         #info-panel span {
-            color: #7ec8ff;
+            color: #ffdd44;
             font-weight: 600;
             margin-left: 6px;
         }
@@ -45,25 +46,27 @@
             position: absolute;
             bottom: 80px;
             left: 20px;
-            background: rgba(30,30,40,0.7);
-            color: #ffaa66;
+            background: rgba(60, 20, 20, 0.8);
+            color: #ffcc66;
             padding: 8px 16px;
             border-radius: 20px;
             font-size: 14px;
             backdrop-filter: blur(4px);
-            border: 1px solid #ffaa6644;
+            border: 1px solid #ffaa00;
+            box-shadow: 0 0 10px #ff9900;
             z-index: 100;
         }
         #hint {
             position: absolute;
             bottom: 20px;
             right: 20px;
-            color: rgba(255,255,255,0.5);
+            color: #ffcc88;
             font-size: 14px;
-            background: rgba(0,0,0,0.3);
+            background: rgba(80, 20, 20, 0.6);
             padding: 6px 12px;
             border-radius: 20px;
             backdrop-filter: blur(4px);
+            border: 1px solid #ffaa44;
             z-index: 100;
         }
     </style>
@@ -71,14 +74,14 @@
 <body>
     <video id="input-video" playsinline></video>
     <div id="info-panel">
-        👋 手部状态: <span id="hand-status">等待摄像头...</span>
+        🧧 手部状态: <span id="hand-status">等待摄像头...</span>
     </div>
     <div id="gesture-hint">
-        🖐️ 手势: <span id="gesture-display">无</span> 
-        <span style="color:#aaa; margin-left:12px;">1=❤️ 2=🌸 3=握拳🎉新年快乐</span>
+        🎇 手势: <span id="gesture-display">无</span> 
+        <span style="color:#ffaa44; margin-left:12px;">1=❤️ 2=🎆烟花 3=👊新年快乐</span>
     </div>
     <div id="hint">
-        Three.js + MediaPipe | 抓取物体(捏合) | 握拳触发新年快乐
+        Three.js + MediaPipe | 捏合抓取 | 二指烟花 | 握拳新年快乐
     </div>
 
     <script type="module">
@@ -112,9 +115,9 @@
         const handStatusSpan = document.getElementById('hand-status');
         const gestureSpan = document.getElementById('gesture-display');
 
-        // --- Three.js 场景初始化 (保持不变) ---
+        // --- Three.js 场景初始化 (新年风格) ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x11161f);
+        scene.background = new THREE.Color(0x2a0a0a); // 深红色背景
 
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.set(0, 1, 10);
@@ -140,11 +143,11 @@
         controls.dampingFactor = 0.05;
         controls.target.set(0, 1, 0);
 
-        // 灯光、地面、星星
-        const ambientLight = new THREE.AmbientLight(0x404060);
+        // --- 新年灯光 (暖色调) ---
+        const ambientLight = new THREE.AmbientLight(0x442222);
         scene.add(ambientLight);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        const dirLight = new THREE.DirectionalLight(0xffccaa, 1.2);
         dirLight.position.set(2, 5, 5);
         dirLight.castShadow = true;
         dirLight.receiveShadow = true;
@@ -159,33 +162,65 @@
         dirLight.shadow.camera.far = 20;
         scene.add(dirLight);
 
-        const fillLight = new THREE.PointLight(0x4466cc, 0.6);
-        fillLight.position.set(-2, 1, 3);
+        const fillLight = new THREE.PointLight(0xff8844, 0.8);
+        fillLight.position.set(-2, 2, 3);
         scene.add(fillLight);
 
-        const gridHelper = new THREE.GridHelper(12, 20, 0x88aaff, 0x335588);
+        // 地面网格 (暗金色)
+        const gridHelper = new THREE.GridHelper(12, 20, 0xffaa33, 0x883333);
         gridHelper.position.y = -1.2;
         scene.add(gridHelper);
 
         const groundPlane = new THREE.Mesh(
             new THREE.PlaneGeometry(12, 12),
-            new THREE.ShadowMaterial({ color: 0x111122, opacity: 0.4 })
+            new THREE.ShadowMaterial({ color: 0x331111, opacity: 0.6 })
         );
         groundPlane.rotation.x = -Math.PI / 2;
         groundPlane.position.y = -1.2;
         groundPlane.receiveShadow = true;
         scene.add(groundPlane);
 
+        // --- 新年漂浮粒子 (金色/红色) ---
+        const festiveParticlesGeom = new THREE.BufferGeometry();
+        const festiveCount = 800;
+        const festivePositions = new Float32Array(festiveCount * 3);
+        const festiveColors = new Float32Array(festiveCount * 3);
+        for (let i = 0; i < festiveCount; i++) {
+            festivePositions[i*3] = (Math.random() - 0.5) * 20;
+            festivePositions[i*3+1] = (Math.random() - 0.5) * 15;
+            festivePositions[i*3+2] = (Math.random() - 0.5) * 20 - 5;
+            const isGold = Math.random() > 0.5;
+            const r = isGold ? 1.0 : 0.9;
+            const g = isGold ? 0.8 : 0.2;
+            const b = isGold ? 0.2 : 0.2;
+            festiveColors[i*3] = r;
+            festiveColors[i*3+1] = g;
+            festiveColors[i*3+2] = b;
+        }
+        festiveParticlesGeom.setAttribute('position', new THREE.BufferAttribute(festivePositions, 3));
+        festiveParticlesGeom.setAttribute('color', new THREE.BufferAttribute(festiveColors, 3));
+        const festiveMaterial = new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending });
+        const festiveParticles = new THREE.Points(festiveParticlesGeom, festiveMaterial);
+        scene.add(festiveParticles);
+
+        // --- 背景星星 (红金混合) ---
         const starsGeometry = new THREE.BufferGeometry();
         const starsCount = 600;
         const starPositions = new Float32Array(starsCount * 3);
+        const starColors = new Float32Array(starsCount * 3);
         for (let i = 0; i < starsCount; i++) {
             starPositions[i*3] = (Math.random() - 0.5) * 50;
             starPositions[i*3+1] = (Math.random() - 0.5) * 30;
             starPositions[i*3+2] = (Math.random() - 0.5) * 50 - 20;
+            // 金色或红色
+            const isGold = Math.random() > 0.5;
+            starColors[i*3] = isGold ? 1.0 : 0.9;
+            starColors[i*3+1] = isGold ? 0.8 : 0.2;
+            starColors[i*3+2] = isGold ? 0.2 : 0.2;
         }
         starsGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-        const starsMaterial = new THREE.PointsMaterial({ color: 0xaaccff, size: 0.15, transparent: true });
+        starsGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+        const starsMaterial = new THREE.PointsMaterial({ size: 0.2, vertexColors: true, transparent: true, opacity: 0.8 });
         const stars = new THREE.Points(starsGeometry, starsMaterial);
         scene.add(stars);
 
@@ -210,11 +245,11 @@
         const vertices = new Float32Array(numSegments * 2 * 3);
         const lineGeometry = new THREE.BufferGeometry();
         lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x88ccff });
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffaa66 });
         const lineSegments = new THREE.LineSegments(lineGeometry, lineMaterial);
         scene.add(lineSegments);
 
-        // --- 可交互物体 ---
+        // --- 可交互物体 (保持不变) ---
         const interactableObjects = [];
         const cube1 = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.6,0.6), new THREE.MeshStandardMaterial({ color: 0xff8844, emissive:0x221100 }));
         cube1.castShadow = true; cube1.receiveShadow = true; cube1.position.set(1.5,0.2,-1.0);
@@ -239,12 +274,15 @@
         let grabbedObject = null;
         let grabOffset = new THREE.Vector3();
 
-        // --- 改进的手势识别函数 (双阈值，手势3=握拳) ---
+        // --- 特效存储 ---
+        const activeEffects = [];
+
+        // --- 手势识别函数 (双阈值，握拳阈值放宽) ---
         function recognizeGesture(landmarks) {
             if (!landmarks) return 0;
             
             const STRAIGHT_THRESH = 0.13; // 伸直阈值
-            const BENT_THRESH = 0.07;     // 弯曲阈值
+            const BENT_THRESH = 0.09;     // 弯曲阈值 (调高以便握拳更容易触发)
             
             function fingerDist(tipIdx, baseIdx) {
                 const tip = landmarks[tipIdx];
@@ -287,8 +325,7 @@
             return 0;
         }
 
-        // --- 特效生成函数 (保持不变) ---
-        const activeEffects = [];
+        // --- 特效生成函数 ---
         function createHeartEffect(position) {
             const particleCount = 200;
             const geometry = new THREE.BufferGeometry();
@@ -311,45 +348,66 @@
             const material = new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending });
             const particles = new THREE.Points(geometry, material);
             scene.add(particles);
-            activeEffects.push({ type:'heart', mesh:particles, life:1.0, velocity:new THREE.Vector3(0,0.02,0), scaleVel:0.02 });
+            activeEffects.push({ type:'heart', mesh:particles, life:1.0, velocity:new THREE.Vector3(0,0.02,0) });
         }
 
-        function createSakuraEffect(position) {
-            const particleCount = 150;
+        // 纯烟花特效 (无文字)
+        function createFireworksEffect(position) {
+            const particleCount = 300;
             const geometry = new THREE.BufferGeometry();
             const positions = new Float32Array(particleCount * 3);
             const colors = new Float32Array(particleCount * 3);
+            const velocities = [];
             for (let i = 0; i < particleCount; i++) {
-                positions[i*3] = position.x + (Math.random()-0.5)*2;
-                positions[i*3+1] = position.y + (Math.random()-0.5)*2;
-                positions[i*3+2] = position.z + (Math.random()-0.5)*2;
-                const pink = new THREE.Color().setHSL(0.95+Math.random()*0.1, 0.8, 0.7);
-                colors[i*3]=pink.r; colors[i*3+1]=pink.g; colors[i*3+2]=pink.b;
+                const angle1 = Math.random() * Math.PI * 2;
+                const angle2 = Math.random() * Math.PI * 2;
+                const speed = 0.1 + Math.random() * 0.25;
+                const vx = Math.sin(angle1) * Math.cos(angle2) * speed;
+                const vy = Math.sin(angle1) * Math.sin(angle2) * speed;
+                const vz = Math.cos(angle1) * speed;
+                positions[i*3] = position.x;
+                positions[i*3+1] = position.y;
+                positions[i*3+2] = position.z;
+                // 金色/红色调
+                const hue = 0.03 + Math.random() * 0.1; // 红橙色范围
+                const col = new THREE.Color().setHSL(hue, 1.0, 0.6);
+                colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
+                velocities.push(new THREE.Vector3(vx, vy, vz));
             }
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            const material = new THREE.PointsMaterial({ size:0.2, vertexColors:true, transparent:true, opacity:1.0 });
+            const material = new THREE.PointsMaterial({ size: 0.2, vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false });
             const particles = new THREE.Points(geometry, material);
             scene.add(particles);
-            activeEffects.push({ type:'sakura', mesh:particles, life:2.0, velocity:new THREE.Vector3(0,-0.03,0.01), rotSpeed:0.01 });
+            
+            activeEffects.push({
+                type: 'fireworks',
+                mesh: particles,
+                velocities: velocities,
+                life: 1.5,
+                age: 0
+            });
         }
 
+        // 新年快乐特效 (文字+烟花)
         function createNewYearEffect(position) {
+            // 文字
             const div = document.createElement('div');
             div.textContent = '新年快乐 🎉';
             div.style.color = '#ffdd44';
             div.style.fontSize = '80px';
             div.style.fontWeight = 'bold';
             div.style.textShadow = '0 0 20px red, 0 0 30px gold';
-            div.style.background = 'rgba(0,0,0,0.4)';
+            div.style.background = 'rgba(80, 20, 20, 0.5)';
             div.style.padding = '20px 40px';
             div.style.borderRadius = '60px';
-            div.style.border = '3px solid gold';
+            div.style.border = '3px solid #ffaa00';
             div.style.whiteSpace = 'nowrap';
             const label = new CSS2DObject(div);
             label.position.copy(position.clone().add(new THREE.Vector3(0,1.5,0)));
             scene.add(label);
             
+            // 烟花粒子
             const particleCount = 300;
             const geometry = new THREE.BufferGeometry();
             const positions = new Float32Array(particleCount * 3);
@@ -365,8 +423,9 @@
                 positions[i*3] = position.x;
                 positions[i*3+1] = position.y;
                 positions[i*3+2] = position.z;
-                const col = new THREE.Color().setHSL(Math.random(), 1.0, 0.6);
-                colors[i*3]=col.r; colors[i*3+1]=col.g; colors[i*3+2]=col.b;
+                const hue = Math.random() * 0.15; // 红黄范围
+                const col = new THREE.Color().setHSL(hue, 1.0, 0.6);
+                colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
                 velocities.push(new THREE.Vector3(vx, vy, vz));
             }
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -375,7 +434,14 @@
             const fireworks = new THREE.Points(geometry, pmat);
             scene.add(fireworks);
             
-            activeEffects.push({ type:'newyear', label:label, particles:fireworks, velocities:velocities, life:2.5, age:0 });
+            activeEffects.push({
+                type: 'newyear',
+                label: label,
+                particles: fireworks,
+                velocities: velocities,
+                life: 2.5,
+                age: 0
+            });
         }
 
         // --- 更新手部骨架 ---
@@ -423,16 +489,15 @@
                     const handedness = results.multiHandedness?.[0]?.label || 'Unknown';
                     updateHandSkeleton(landmarks, handedness);
 
-                    // 使用改进的手势识别
                     const gesture = recognizeGesture(landmarks);
-                    // 更新显示：1=爱心, 2=樱花, 3=握拳
-                    gestureSpan.innerText = ['无','1 爱心','2 樱花','3 握拳'][gesture] || '无';
+                    // 显示手势：1爱心，2烟花，3握拳
+                    gestureSpan.innerText = ['无','1 爱心','2 烟花','3 握拳'][gesture] || '无';
                     
                     if (gesture !== lastGesture && gesture !== 0) {
                         const wristPos = jointMeshes[0].position.clone();
                         if (gesture === 1) createHeartEffect(wristPos);
-                        else if (gesture === 2) createSakuraEffect(wristPos);
-                        else if (gesture === 3) createNewYearEffect(wristPos); // 握拳触发新年快乐
+                        else if (gesture === 2) createFireworksEffect(wristPos);
+                        else if (gesture === 3) createNewYearEffect(wristPos);
                     }
                     lastGesture = gesture;
                 } else {
@@ -517,10 +582,17 @@
                     eff.mesh.scale.set(scale, scale, scale);
                     eff.mesh.material.opacity = eff.life;
                     eff.mesh.position.add(eff.velocity);
-                } else if (eff.type === 'sakura') {
-                    eff.mesh.rotation.y += 0.01;
-                    eff.mesh.position.add(eff.velocity);
-                    eff.mesh.material.opacity = eff.life * 0.8;
+                } else if (eff.type === 'fireworks') {
+                    eff.age += deltaTime;
+                    const positions = eff.mesh.geometry.attributes.position.array;
+                    for (let j = 0; j < positions.length/3; j++) {
+                        positions[j*3] += eff.velocities[j].x;
+                        positions[j*3+1] += eff.velocities[j].y;
+                        positions[j*3+2] += eff.velocities[j].z;
+                        eff.velocities[j].y -= 0.002; // 重力
+                    }
+                    eff.mesh.geometry.attributes.position.needsUpdate = true;
+                    eff.mesh.material.opacity = eff.life;
                 } else if (eff.type === 'newyear') {
                     eff.age += deltaTime;
                     if (eff.label) {
@@ -548,6 +620,8 @@
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
 
+            // 漂浮粒子缓慢旋转
+            festiveParticles.rotation.y += 0.0005;
             stars.rotation.y += 0.0002;
             
             updateInteraction();
