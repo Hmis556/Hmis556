@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Three.js + MediaPipe Hands：实时3D手势识别</title>
-    <!-- 引入 Three.js 核心库 (r128 是目前最新稳定版) -->
+    <title>Three.js + MediaPipe Hands：抓取交互示例</title>
     <script type="importmap">
         {
             "imports": {
@@ -12,21 +11,17 @@
             }
         }
     </script>
-    <!-- 引入 MediaPipe Hands 和 Camera Utils (使用 CDN 全局变量形式，便于快速集成) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <style>
-        /* CSS3: 全屏布局、隐藏视频元素、提示框样式 */
         body {
             margin: 0;
             overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-        /* 隐藏原始的video元素，它只作为MediaPipe的输入，不显示 */
         #input-video {
-            display: none; /* 完全隐藏视频，我们只用Three.js画布展示 */
+            display: none;
         }
-        /* 提示框样式：半透明背景，圆角，位于左上角，不影响点击 */
         #info-panel {
             position: absolute;
             top: 20px;
@@ -48,7 +43,6 @@
             font-weight: 600;
             margin-left: 6px;
         }
-        /* 可选的右下角fps或说明，但非必须，仅作装饰 */
         #hint {
             position: absolute;
             bottom: 20px;
@@ -61,115 +55,140 @@
             backdrop-filter: blur(4px);
             z-index: 100;
         }
-        /* 加载/错误提示 (如果有) 简单样式 */
-        .error-message {
-            color: #ff9e9e;
-            background: rgba(180,0,0,0.5);
+        #interaction-hint {
+            position: absolute;
+            bottom: 80px;
+            left: 20px;
+            color: #ffaa66;
+            background: rgba(30,30,40,0.7);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            backdrop-filter: blur(4px);
+            border: 1px solid #ffaa6644;
+            z-index: 100;
         }
     </style>
 </head>
 <body>
-    <!-- HTML5 结构：video元素用于摄像头捕获（隐藏），提示框div -->
     <video id="input-video" playsinline></video>
     <div id="info-panel">
         👋 手部状态: <span id="hand-status">等待摄像头...</span>
     </div>
+    <div id="interaction-hint">
+        🖐️ 靠近物体 → 高亮 | ✌️ 拇指+食指捏合 → 抓取/释放
+    </div>
     <div id="hint">
-        Three.js + MediaPipe Hands | 移动手部查看3D骨架
+        Three.js + MediaPipe Hands | 拖动视角: 鼠标/触摸
     </div>
 
     <script type="module">
-        // ----- ES6 模块化方式引入Three.js (因为使用了import map) -----
         import * as THREE from 'three';
-        import { OrbitControls } from 'https://unpkg.com/three@0.128.0/examples/jsm/controls/OrbitControls.js'; // 可选：添加视角控制，方便观察
+        import { OrbitControls } from 'https://unpkg.com/three@0.128.0/examples/jsm/controls/OrbitControls.js';
 
         // --- 配置参数 ---
-        // 手部关键点数量
         const NUM_LANDMARKS = 21;
-        // 坐标缩放因子：将归一化的坐标映射到Three场景大小 (根据相机视野调整)
         const SCALE = 5.0;
-        // 深度偏移 (让手在相机前方合适位置)
         const DEPTH_OFFSET = 1.0;
 
-        // --- 获取DOM元素 ---
+        // 交互阈值
+        const TOUCH_DIST_THRESH = 0.5;      // 触碰高亮距离
+        const PINCH_DIST_THRESH = 0.25;     // 捏合距离阈值 (拇指与食指)
+        const RELEASE_DIST_THRESH = 0.35;   // 释放捏合距离阈值 (略大防止抖动)
+        const GRAB_DIST_THRESH = 0.7;        // 抓取时指尖与物体的最大距离
+
+        // 指尖索引 (MediaPipe Hand Landmarks)
+        const THUMB_TIP = 4;
+        const INDEX_TIP = 8;
+        // 可选其他指尖，但简单起见只用拇指和食指
+
+        // --- DOM 元素 ---
         const videoElement = document.getElementById('input-video');
         const handStatusSpan = document.getElementById('hand-status');
 
-        // --- 初始化Three.js场景 ---
+        // --- Three.js 场景初始化 ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x11161f); // 深灰蓝底色
+        scene.background = new THREE.Color(0x11161f);
 
-        // 透视相机 (视野60度, 宽高比自动, 近远裁面)
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 0, 10); // 相机位于z正轴看向原点
+        camera.position.set(0, 1, 10);
         camera.lookAt(0, 0, 0);
 
-        // 渲染器 (开启抗锯齿)
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 限制过高pixel ratio以防性能问题
-        renderer.shadowMap.enabled = false; // 无需阴影
-        document.body.appendChild(renderer.domElement); // 添加canvas到body
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true; // 开启阴影让交互更真实
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
 
-        // 添加简单轨道控制 (方便调试，但也可以注释掉以保持自动旋转？这里加上但禁用手动旋转？为了体验，加上并稍微限制)
-        // 如果想纯跟随手，可以不加；这里加上使用户可以旋转视角观察3D效果，同时手部仍更新位置。
+        // 轨道控制器 (方便观察)
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
         controls.autoRotate = false;
         controls.enableZoom = true;
-        controls.target.set(0, 0, 0);
-        controls.maxPolarAngle = Math.PI / 2; // 限制角度
+        controls.target.set(0, 1, 0);
+        controls.maxPolarAngle = Math.PI / 2;
 
-        // --- 灯光系统 ---
-        // 环境光
+        // --- 灯光 (为了阴影需要方向光) ---
         const ambientLight = new THREE.AmbientLight(0x404060);
         scene.add(ambientLight);
-        
-        // 主光源方向光1
-        const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.0);
-        dirLight1.position.set(1, 2, 3);
-        scene.add(dirLight1);
-        
-        const dirLight2 = new THREE.DirectionalLight(0xffccaa, 0.8);
-        dirLight2.position.set(-2, 1, 2);
-        scene.add(dirLight2);
-        
-        // 添加一些微弱的点光源补充
-        const pointLight = new THREE.PointLight(0x4466cc, 0.5);
-        pointLight.position.set(0, 1, 2);
-        scene.add(pointLight);
 
-        // 可选：添加一个简单的网格地面或辅助轴，以便观察手部移动范围
-        const gridHelper = new THREE.GridHelper(10, 20, 0x88aaff, 0x335588);
-        gridHelper.position.y = -2.5; // 稍微下沉，不影响手部显示
+        // 主光源 - 产生阴影的方向光
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(2, 5, 5);
+        dirLight.castShadow = true;
+        dirLight.receiveShadow = true;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        const d = 8;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        dirLight.shadow.camera.near = 2;
+        dirLight.shadow.camera.far = 20;
+        scene.add(dirLight);
+
+        const fillLight = new THREE.PointLight(0x4466cc, 0.6);
+        fillLight.position.set(-2, 1, 3);
+        scene.add(fillLight);
+
+        // 地面网格和接收阴影的平面 (为了物体落地阴影更明显)
+        const gridHelper = new THREE.GridHelper(12, 20, 0x88aaff, 0x335588);
+        gridHelper.position.y = -1.2;
         scene.add(gridHelper);
-        
-        // 添加一些星星背景效果（粒子）来展示Three.js粒子系统能力，同时也更生动
+
+        const groundPlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(12, 12),
+            new THREE.ShadowMaterial({ color: 0x111122, opacity: 0.4 })
+        );
+        groundPlane.rotation.x = -Math.PI / 2;
+        groundPlane.position.y = -1.2;
+        groundPlane.receiveShadow = true;
+        scene.add(groundPlane);
+
+        // 星星背景 (粒子)
         const starsGeometry = new THREE.BufferGeometry();
-        const starsCount = 800;
+        const starsCount = 600;
         const starPositions = new Float32Array(starsCount * 3);
         for (let i = 0; i < starsCount; i++) {
-            starPositions[i*3] = (Math.random() - 0.5) * 40;
-            starPositions[i*3+1] = (Math.random() - 0.5) * 40;
-            starPositions[i*3+2] = (Math.random() - 0.5) * 40 - 10; // 分布在相机后方远处
+            starPositions[i*3] = (Math.random() - 0.5) * 50;
+            starPositions[i*3+1] = (Math.random() - 0.5) * 30;
+            starPositions[i*3+2] = (Math.random() - 0.5) * 50 - 20;
         }
         starsGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-        const starsMaterial = new THREE.PointsMaterial({ color: 0xaaccff, size: 0.1, transparent: true });
+        const starsMaterial = new THREE.PointsMaterial({ color: 0xaaccff, size: 0.15, transparent: true });
         const stars = new THREE.Points(starsGeometry, starsMaterial);
         scene.add(stars);
 
-        // --- 创建手部骨架的可视化模型 (球体表示关键点，圆柱/线表示骨骼) ---
-        
-        // 1. 关键点球体 (使用小球体Mesh，每个点一个，便于单独控制颜色)
+        // --- 创建手部骨架 (球体 + 连线) ---
         const jointMeshes = [];
-        // 定义每个关节的颜色 (可以按照手指区分，这里简单使用彩虹渐变)
         const colors = [
             0xff5555, 0xffaa55, 0xffff55, 0x55ff55, 0x55ffff, 0x5555ff, 0xaa55ff, 0xff55aa,
             0xff8888, 0xffcc88, 0xffff88, 0x88ff88, 0x88ffff, 0x8888ff, 0xcc88ff, 0xff88cc,
             0xff9999, 0xffdd99, 0xffff99, 0x99ff99, 0x99ffff
-        ]; // 21种颜色，足够
-        
+        ];
         const sphereRadius = 0.12;
         const sphereGeom = new THREE.SphereGeometry(sphereRadius, 24, 16);
         
@@ -181,51 +200,86 @@
                 metalness: 0.1
             });
             const sphere = new THREE.Mesh(sphereGeom, material);
-            sphere.castShadow = false; // 本场景无需阴影
-            sphere.receiveShadow = false;
-            // 初始位置放在原点外 (暂时隐藏)
+            sphere.castShadow = true;
+            sphere.receiveShadow = false; // 小球不接收阴影，节省性能
             sphere.position.set(0, 0, -10);
             scene.add(sphere);
             jointMeshes.push(sphere);
         }
 
-        // 2. 骨骼连线 (使用LineSegments一次性渲染所有线段，效率更高)
-        // 获取MediaPipe预定义的连接对 (HAND_CONNECTIONS 是一个全局变量，来自MediaPipe Hands库)
-        // 注意：在全局 script 中引入了 hands.js，它暴露了 HAND_CONNECTIONS 常量
-        const connections = window.HAND_CONNECTIONS; // 这是一个数组，每个元素是 [startIdx, endIdx]
-        if (!connections) {
-            console.error('HAND_CONNECTIONS 未定义，请检查MediaPipe Hands库引入');
-        }
-        
-        // 准备顶点数组：每个线段2个顶点，每个顶点3个坐标
+        const connections = window.HAND_CONNECTIONS;
         const numSegments = connections.length;
-        const vertices = new Float32Array(numSegments * 2 * 3); // 两个顶点 per segment
-        
-        // 创建几何体并设置position属性
+        const vertices = new Float32Array(numSegments * 2 * 3);
         const lineGeometry = new THREE.BufferGeometry();
         lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-        
-        // 设置索引？不需要，LineSegments直接使用顶点对。
-        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x88ccff, linewidth: 1 }); // linewidth 在 WebGL 中可能不支持所有环境，这里保留视觉效果
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x88ccff });
         const lineSegments = new THREE.LineSegments(lineGeometry, lineMaterial);
         scene.add(lineSegments);
 
-        // 为了视觉效果更丰富，还可以添加一些半透明的连接线作为光晕？不强制
-
-        // --- 辅助元素：在原点添加一个半透明小球作为参考 (可选) ---
-        const originSphereGeom = new THREE.SphereGeometry(0.05, 8);
-        const originSphereMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
-        const originSphere = new THREE.Mesh(originSphereGeom, originSphereMat);
+        // 辅助原点
+        const originSphere = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0.3, transparent: true }));
         scene.add(originSphere);
 
-        // --- 定义更新手部骨架的函数 (从MediaPipe landmarks数据) ---
+        // --- 新增：可交互的物体 (方块和球体) ---
+        const interactableObjects = [];
+        
+        // 辅助函数：生成随机颜色
+        function randomColor() {
+            return Math.floor(Math.random() * 0xffffff);
+        }
+
+        // 创建立方体1
+        const cube1Geom = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+        const cube1Mat = new THREE.MeshStandardMaterial({ color: 0xff8844, emissive: 0x221100 });
+        const cube1 = new THREE.Mesh(cube1Geom, cube1Mat);
+        cube1.castShadow = true;
+        cube1.receiveShadow = true;
+        cube1.position.set(1.5, 0.2, -1.0);
+        scene.add(cube1);
+        interactableObjects.push({ mesh: cube1, type: 'cube', originalEmissive: 0x221100, isGrabbed: false });
+
+        // 创建立方体2
+        const cube2Geom = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const cube2Mat = new THREE.MeshStandardMaterial({ color: 0x44aaff, emissive: 0x002244 });
+        const cube2 = new THREE.Mesh(cube2Geom, cube2Mat);
+        cube2.castShadow = true;
+        cube2.receiveShadow = true;
+        cube2.position.set(-1.2, 0.3, -0.5);
+        scene.add(cube2);
+        interactableObjects.push({ mesh: cube2, type: 'cube', originalEmissive: 0x002244, isGrabbed: false });
+
+        // 创建球体1
+        const sphere1Geom = new THREE.SphereGeometry(0.4, 32, 16);
+        const sphere1Mat = new THREE.MeshStandardMaterial({ color: 0xaa66ff, emissive: 0x220044 });
+        const sphere1 = new THREE.Mesh(sphere1Geom, sphere1Mat);
+        sphere1.castShadow = true;
+        sphere1.receiveShadow = true;
+        sphere1.position.set(0.5, 0.4, -2.0);
+        scene.add(sphere1);
+        interactableObjects.push({ mesh: sphere1, type: 'sphere', originalEmissive: 0x220044, isGrabbed: false });
+
+        // 创建球体2 (稍小)
+        const sphere2Geom = new THREE.SphereGeometry(0.3, 24, 12);
+        const sphere2Mat = new THREE.MeshStandardMaterial({ color: 0x66ff99, emissive: 0x003322 });
+        const sphere2 = new THREE.Mesh(sphere2Geom, sphere2Mat);
+        sphere2.castShadow = true;
+        sphere2.receiveShadow = true;
+        sphere2.position.set(-0.8, -0.1, -2.5);
+        scene.add(sphere2);
+        interactableObjects.push({ mesh: sphere2, type: 'sphere', originalEmissive: 0x003322, isGrabbed: false });
+
+        // 为了增加趣味，再加一个环面结？但方块和球已够
+
+        // 抓取状态变量
+        let grabbedObject = null;          // 当前被抓住的物体对象 (即interactableObjects中的条目)
+        let grabOffset = new THREE.Vector3(); // 物体相对于抓取点(食指指尖)的偏移量
+
+        // --- 更新手部骨架 (MediaPipe结果处理) ---
         function updateHandSkeleton(landmarks, handedness = 'Right') {
             if (!landmarks || landmarks.length !== NUM_LANDMARKS) {
-                // 如果没有检测到手，将所有球体移出视野 (放到远处)
                 for (let i = 0; i < NUM_LANDMARKS; i++) {
                     jointMeshes[i].position.set(0, 0, -10);
                 }
-                // 更新线段顶点为默认位置（隐藏）
                 const positionAttr = lineGeometry.attributes.position;
                 const array = positionAttr.array;
                 for (let i = 0; i < array.length; i += 3) {
@@ -234,40 +288,29 @@
                     array[i+2] = -10;
                 }
                 positionAttr.needsUpdate = true;
-                lineGeometry.setDrawRange(0, 0); // 不绘制任何线段
+                lineGeometry.setDrawRange(0, 0);
                 handStatusSpan.innerText = '未检测到手';
                 return;
             }
 
-            // 检测到手，更新状态文本
             handStatusSpan.innerText = `${handedness}手 (21点)`;
 
-            // 1. 更新球体位置
             for (let i = 0; i < NUM_LANDMARKS; i++) {
                 const lm = landmarks[i];
-                // MediaPipe坐标: x,y ∈ [0,1], z 是相对深度 (0为手掌平面，负值远离相机？实际测试中z越小越靠近相机)
-                // 映射到Three坐标系：我们希望x向右，y向上，z指向屏幕内(右手系，相机看向-z，所以手应该在z负区域靠近相机)
-                // 这里调整：让手在z负区域，且移动范围适应SCALE
                 const x = (lm.x - 0.5) * 2 * SCALE;
-                const y = (0.5 - lm.y) * 2 * SCALE; // 反转Y
-                // 深度: MediaPipe z值范围大约 -0.3~0.3，手掌为0。我们希望手掌在z=0附近，手指指向z负或正？为了直观，让手平面与屏幕平行，手指指向z负（朝向相机）则z更小。
-                // 简单映射：z = -lm.z * SCALE * 2 - 1.0 (让手掌在z=-1左右)
-                const z = -lm.z * SCALE * 1.5 - 1.0; 
-                
+                const y = (0.5 - lm.y) * 2 * SCALE;
+                const z = -lm.z * SCALE * 1.5 - 1.0;
                 jointMeshes[i].position.set(x, y, z);
             }
 
-            // 2. 更新线段顶点位置
             const positionAttr = lineGeometry.attributes.position;
             const array = positionAttr.array;
             let idx = 0;
             for (let [start, end] of connections) {
                 if (start < NUM_LANDMARKS && end < NUM_LANDMARKS) {
-                    // 起点
                     array[idx] = jointMeshes[start].position.x;
                     array[idx+1] = jointMeshes[start].position.y;
                     array[idx+2] = jointMeshes[start].position.z;
-                    // 终点
                     array[idx+3] = jointMeshes[end].position.x;
                     array[idx+4] = jointMeshes[end].position.y;
                     array[idx+5] = jointMeshes[end].position.z;
@@ -275,77 +318,150 @@
                 }
             }
             positionAttr.needsUpdate = true;
-            // 确保线段绘制范围正确 (有时可能因为数据变化而需要重新设置drawRange)
-            lineGeometry.setDrawRange(0, numSegments * 2); // 顶点数量 = 线段数*2
+            lineGeometry.setDrawRange(0, numSegments * 2);
         }
 
-        // --- 初始化 MediaPipe Hands 和 Camera ---
+        // --- MediaPipe Hands 初始化 ---
         async function initMediaPipe() {
-            // 创建 Hands 实例
             const hands = new window.Hands({
                 locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
             });
             
-            // 设置 Hands 选项
             hands.setOptions({
-                maxNumHands: 1,                // 为简化，只检测一只手，便于Three可视化 (可改为2，但需要扩展逻辑)
-                modelComplexity: 1,             // 1 表示更准确的模型
+                maxNumHands: 1,
+                modelComplexity: 1,
                 minDetectionConfidence: 0.5,
                 minTrackingConfidence: 0.5
             });
 
-            // 处理检测结果
             hands.onResults((results) => {
-                // results 包含多手信息，我们取第一个检测到的手
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                    // 取第一只手
                     const landmarks = results.multiHandLandmarks[0];
                     const handedness = results.multiHandedness ? results.multiHandedness[0].label : 'Unknown';
-                    // 更新Three场景中的骨架
                     updateHandSkeleton(landmarks, handedness);
                 } else {
-                    // 没有检测到手
                     updateHandSkeleton(null);
                 }
             });
 
-            // 使用 CameraUtils 绑定视频流
             const camera = new window.Camera(videoElement, {
                 onFrame: async () => {
                     await hands.send({ image: videoElement });
                 },
-                width: 640,    // 请求分辨率，实际可能会适应，但MediaPipe处理不需要太高
+                width: 640,
                 height: 480
             });
             
-            // 启动摄像头 (会请求权限)
             camera.start().catch(error => {
                 console.error('摄像头启动失败:', error);
                 handStatusSpan.innerText = '摄像头错误';
-                handStatusSpan.style.color = '#ff9e9e';
             });
         }
 
-        // 启动MediaPipe
         initMediaPipe();
 
-        // --- 动画循环 (Three.js) ---
+        // --- 交互逻辑 (在动画循环中执行，基于最新的jointMeshes位置) ---
+        function updateInteraction() {
+            // 检查是否有手 (通过第一个关节的z坐标判断)
+            if (jointMeshes[0].position.z < -9) {
+                // 没有手，如果有被抓住的物体，强制释放? 为了安全，释放
+                if (grabbedObject) {
+                    grabbedObject.isGrabbed = false;
+                    grabbedObject = null;
+                }
+                // 同时恢复所有物体高亮
+                interactableObjects.forEach(obj => {
+                    obj.mesh.material.emissive.setHex(obj.originalEmissive);
+                });
+                return;
+            }
+
+            // 获取指尖位置 (世界坐标)
+            const thumbPos = jointMeshes[THUMB_TIP].position.clone();
+            const indexPos = jointMeshes[INDEX_TIP].position.clone();
+
+            // 计算拇指与食指距离
+            const pinchDist = thumbPos.distanceTo(indexPos);
+
+            // 处理抓取与释放
+            if (grabbedObject) {
+                // 已经抓取了物体: 检查是否释放 (捏合距离变大)
+                if (pinchDist > RELEASE_DIST_THRESH) {
+                    // 释放物体
+                    grabbedObject.mesh.material.emissive.setHex(grabbedObject.originalEmissive);
+                    grabbedObject.isGrabbed = false;
+                    grabbedObject = null;
+                } else {
+                    // 继续抓取: 更新物体位置为食指指尖位置 + 偏移量
+                    // 也可以使用两指中点，这里简单用食指
+                    const targetPos = indexPos.clone().add(grabOffset);
+                    grabbedObject.mesh.position.copy(targetPos);
+                }
+            } else {
+                // 没有抓取物体: 检测是否触发抓取 (捏合距离小)
+                if (pinchDist < PINCH_DIST_THRESH) {
+                    // 寻找最近的物体 (以食指指尖为参考)
+                    let closestObj = null;
+                    let minDist = Infinity;
+                    interactableObjects.forEach(obj => {
+                        if (obj.isGrabbed) return; // 理论上不可能，但预防
+                        const dist = indexPos.distanceTo(obj.mesh.position);
+                        if (dist < GRAB_DIST_THRESH && dist < minDist) {
+                            minDist = dist;
+                            closestObj = obj;
+                        }
+                    });
+                    if (closestObj) {
+                        // 抓取该物体
+                        grabbedObject = closestObj;
+                        grabbedObject.isGrabbed = true;
+                        // 计算偏移量: 物体位置相对于食指指尖
+                        grabOffset.copy(grabbedObject.mesh.position).sub(indexPos);
+                        // 视觉反馈: 增加发光
+                        grabbedObject.mesh.material.emissive.setHex(0x444444); // 抓取时变暗或变亮，随意
+                    }
+                }
+            }
+
+            // 触碰高亮逻辑 (无论是否抓取，未抓取的物体才能高亮，避免干扰)
+            interactableObjects.forEach(obj => {
+                if (obj.isGrabbed) {
+                    // 被抓取的物体保持一种特殊颜色 (或者不变)
+                    // 这里我们让它轻微发光表示被抓住，上面已设置
+                    return;
+                }
+
+                // 检查是否有任何指尖靠近 (使用拇指、食指、中指等，简单起见用食指)
+                const distToIndex = indexPos.distanceTo(obj.mesh.position);
+                const distToThumb = thumbPos.distanceTo(obj.mesh.position);
+                const minDist = Math.min(distToIndex, distToThumb);
+
+                if (minDist < TOUCH_DIST_THRESH) {
+                    // 高亮: 增加自发光
+                    obj.mesh.material.emissive.setHex(0x553300); // 暖色高亮
+                } else {
+                    // 恢复原样
+                    obj.mesh.material.emissive.setHex(obj.originalEmissive);
+                }
+            });
+        }
+
+        // --- 动画循环 ---
         function animate() {
             requestAnimationFrame(animate);
 
-            // 可选：让星星缓慢旋转
+            // 星星旋转
             stars.rotation.y += 0.0002;
-            stars.rotation.x += 0.0001;
 
-            // 更新轨道控制器
+            // 更新交互 (必须在controls更新前？不影响)
+            updateInteraction();
+
             controls.update();
-
-            // 渲染场景
             renderer.render(scene, camera);
         }
         animate();
 
-        // --- 处理窗口大小变化 (CSS全屏适应) ---
+        // --- 窗口自适应 ---
         window.addEventListener('resize', onWindowResize, false);
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -353,16 +469,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // --- 初始化完成后的额外提示 (通过控制台) ---
-        console.log('Three.js场景已初始化，等待手势识别...');
-        
-        // 简单的错误捕获 (比如用户拒绝摄像头)
-        window.addEventListener('error', (e) => {
-            if (e.message.includes('media') || e.message.includes('camera')) {
-                handStatusSpan.innerText = '无法访问摄像头';
-            }
-        });
-
+        console.log('场景已启动，尝试捏合抓取物体！');
     </script>
 </body>
 </html>
