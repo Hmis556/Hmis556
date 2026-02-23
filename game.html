@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>加密安全 · Base64 编码（电子书·暗黑版）</title>
+    <!-- Tailwind CSS via CDN (成熟框架) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 自定义微调，保持电子书质感 -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&family=Source+Code+Pro:wght@400;600&display=swap');
+        body {
+            font-family: 'Merriweather', 'Georgia', 'Times New Roman', serif;
+            background: #121212; /* 更深邃的背景 */
+        }
+        .code-font {
+            font-family: 'Source Code Pro', 'Courier New', monospace;
+        }
+        .ebook-container {
+            background: #1e1e1e; /* 书页深色 */
+            border: 1px solid #3e3e3e;
+            box-shadow: 0 20px 35px -8px rgba(0,0,0,0.9), 0 0 0 1px #2a2a2a inset;
+        }
+        /* 自定义列表符号 (使用伪元素) */
+        .list-feature li {
+            position: relative;
+            padding-left: 1.8rem;
+            margin-bottom: 0.5rem;
+            border-bottom: 1px dashed #3e3e3e;
+            padding-bottom: 0.5rem;
+        }
+        .list-feature li::before {
+            content: "●";
+            color: #7aa39f;
+            font-size: 1.2rem;
+            position: absolute;
+            left: 0;
+            top: -0.1rem;
+        }
+        /* 代码块风格 */
+        .code-block {
+            background: #252525;
+            border-left: 6px solid #5f7b7c;
+            border-radius: 0 0.75rem 0.75rem 0;
+            font-family: 'Source Code Pro', monospace;
+        }
+        /* 进度条装饰 */
+        .progress-bar {
+            height: 3px;
+            background: linear-gradient(90deg, #5f7b7c 0%, #5f7b7c 60%, #333333 60%);
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-6 antialiased">
+    <!-- 电子书主容器 -->
+    <div class="ebook-container max-w-3xl w-full rounded-2xl p-8 md:p-12 text-gray-300 relative">
+
+        <!-- 页眉 -->
+        <div class="flex justify-between items-center border-b border-gray-700 pb-4 mb-8 uppercase tracking-wider text-sm">
+            <span class="font-bold text-gray-400 text-lg">加密安全</span>
+            <span class="bg-[#2c2c2c] px-5 py-1.5 rounded-full border border-gray-600 text-gray-400 text-xs">第六卷 · 编码技术</span>
+        </div>
+
+        <!-- 内容区 -->
+        <div class="space-y-6">
+            <!-- 标题 -->
+            <h1 class="text-4xl md:text-5xl font-light text-[#bcb09b] border-l-8 border-[#5f7b7c] pl-6 mb-8">§ Base64 编码</h1>
+
+            <!-- 定义段落 -->
+            <p class="leading-relaxed text-base md:text-lg text-gray-300"><span class="font-bold text-[#c7bc9c]">定义：</span> Base64是一种将二进制数据转换为可打印ASCII字符的编码方式。它将每3个字节（24位）拆分为4个6位组，每个6位组映射到字符集 <code class="code-font bg-[#2b2b2b] px-2 py-0.5 rounded border border-gray-600 text-[#c7ab7a]">A-Z a-z 0-9 + /</code>。当数据长度不是3的倍数时，用填充字符 <code class="code-font bg-[#2b2b2b] px-2 py-0.5 rounded border border-gray-600 text-[#c7ab7a]">=</code> 补齐至4的倍数。该编码广泛用于电子邮件（MIME）、HTTP基础认证及数据URI中，也常作为信息混淆的简单手段出现在谜题中。</p>
+
+            <!-- 特征 -->
+            <h2 class="text-3xl font-light text-[#a7b8b0] border-b border-dashed border-gray-600 pb-2 mt-10">特征</h2>
+            <ul class="list-feature space-y-1 text-gray-300 text-base md:text-lg mt-4">
+                <li><strong class="text-[#c7bc9c]">字符集限制：</strong> 仅包含大小写字母、数字、<code class="code-font">+</code>、<code class="code-font">/</code> 以及末尾的 <code class="code-font">=</code>。</li>
+                <li><strong class="text-[#c7bc9c]">填充标记：</strong> 末尾可能出现 <code class="code-font">=</code> 或 <code class="code-font">==</code>，使字符串长度恒为4的倍数。</li>
+                <li><strong class="text-[#c7bc9c]">体积膨胀：</strong> 编码后数据量约增加33%。</li>
+                <li><strong class="text-[#c7bc9c]">视觉规整：</strong> 无乱码，全为可读字符，结尾等号常为识别线索。</li>
+                <li><strong class="text-[#c7bc9c]">无密钥：</strong> 并非加密算法，仅编码，故任何人均可解码。</li>
+            </ul>
+
+            <!-- 解密方案 -->
+            <h2 class="text-3xl font-light text-[#a7b8b0] border-b border-dashed border-gray-600 pb-2 mt-10">解密方案</h2>
+            <p class="leading-relaxed text-base md:text-lg text-gray-300">Base64的解密即解码过程：将每4个字符还原为3个字节，忽略填充后得到原始数据。几乎所有编程语言都内置解码函数。以下为Python与JavaScript示例，可对任意Base64字符串进行解码。</p>
+
+            <!-- Python 代码块 -->
+            <div class="code-block p-5 my-6 text-sm md:text-base shadow-inner">
+                <span class="text-[#c7ab7a]"># Python 解码</span><br>
+                <span class="text-gray-400">import base64</span><br><br>
+                <span class="text-gray-400">cipher_text = </span><span class="text-[#b5bd68]">"base64_string_here"</span><span class="text-gray-400">   # 替换为实际密文</span><br>
+                <span class="text-gray-400">plain_text = base64.b64decode(cipher_text).decode(</span><span class="text-[#b5bd68]">'utf-8'</span><span class="text-gray-400">)</span><br>
+                <span class="text-gray-400">print(plain_text)</span>
+            </div>
+
+            <!-- JavaScript 代码块 -->
+            <div class="code-block p-5 my-6 text-sm md:text-base shadow-inner">
+                <span class="text-[#c7ab7a]">// JavaScript 解码</span><br>
+                <span class="text-gray-400">const cipher = </span><span class="text-[#b5bd68]">"base64_string_here"</span><span class="text-gray-400">; </span><span class="text-gray-500">// 替换为实际密文</span><br>
+                <span class="text-gray-400">const plain = atob(cipher);</span><br>
+                <span class="text-gray-400">console.log(plain);</span>
+            </div>
+
+            <!-- 补充说明 -->
+            <p class="leading-relaxed text-base md:text-lg text-gray-300">在解谜场景中，若发现符合上述特征的字符串，直接通过工具或代码即可还原。注意，标准Base64字符集中包含<code class="code-font bg-[#2b2b2b] px-2 py-0.5 rounded border border-gray-600 text-[#c7ab7a]">+</code>和<code class="code-font bg-[#2b2b2b] px-2 py-0.5 rounded border border-gray-600 text-[#c7ab7a]">/</code>，而URL安全变体则使用<code class="code-font bg-[#2b2b2b] px-2 py-0.5 rounded border border-gray-600 text-[#c7ab7a]">-</code>和<code class="code-font bg-[#2b2b2b] px-2 py-0.5 rounded border border-gray-600 text-[#c7ab7a]">_</code>。末尾等号数量暗示原始数据长度模3的余数：一个等号表示最后16位数据（2字节），两个等号表示最后8位数据（1字节）。</p>
+
+            <!-- 附注框 (Tailwind风格) -->
+            <div class="bg-[#2a2a2a] border-l-8 border-[#5f7b7c] p-5 rounded-r-lg mt-8 text-gray-400 text-base">
+                <span class="font-bold text-[#c7bc9c]">注：</span> Base64本身不提供安全性，仅用于编码传输。但在谜题中，它可作为第一层障碍，阻止不经意的窥探。
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <div class="flex justify-between items-center border-t border-gray-700 mt-12 pt-6 text-xs text-gray-500 uppercase">
+            <div class="flex gap-6">
+                <span>内部参考 · 编码分册</span>
+                <span class="bg-[#2c2c2c] px-4 py-1.5 rounded-full border border-gray-600 text-gray-400">p. 42</span>
+            </div>
+            <div>
+                <span>限授权人员</span>
+            </div>
+        </div>
+
+        <!-- 阅读进度条 -->
+        <div class="progress-bar w-full mt-6 rounded-full"></div>
+
+        <!-- 极简角标 (装饰) -->
+        <div class="absolute bottom-4 right-6 text-[#376157] text-[0.6rem] border border-[#316c5d] bg-[#0f2420] px-2 py-0.5 rounded-full">0x42ASE64</div>
+    </div>
+</body>
+</html>
