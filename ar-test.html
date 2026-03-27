@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Web AR - 二维码识别并显示3D模型</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        /* 信息面板 */
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+            pointer-events: none;
+            z-index: 10;
+            font-size: 14px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            border-left: 4px solid #00ffaa;
+        }
+        #status {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.6);
+            color: #ffaa00;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-family: monospace;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .instruction {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.5);
+            color: #ccc;
+            padding: 5px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 10;
+        }
+        @media (max-width: 600px) {
+            #info { font-size: 10px; top: 10px; left: 10px; }
+            .instruction { font-size: 9px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        🔍 扫描任意二维码 | 🧊 3D模型将附着在二维码上
+    </div>
+    <div id="status">
+        ⚙️ 初始化摄像头中...
+    </div>
+    <div class="instruction">
+        📱 对准二维码，模型会跟随移动
+    </div>
+
+    <!-- 引入Three.js核心库以及扩展 -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+        
+        // 引入 jsQR 库 (二维码识别)
+        import jsQR from 'https://cdn.skypack.dev/jsqr@1.4.0';
+        
+        // --- 初始化 Three.js 场景 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111122); // 深色背景，在视频纹理加载前显示
+        
+        // 相机: 透视相机，视野60，宽高比动态，近平面0.1，远平面1000
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0, 5);
+        camera.lookAt(0, 0, 0);
+        
+        // 渲染器 (透明背景，因为我们后面会用视频纹理作为背景平面，或者直接让场景背景透明叠加在video上)
+        // 为了更好的效果，我们创建一个全屏Canvas，并将视频作为纹理贴在背景平面上，这样3D物体可以自由移动且不受遮挡影响。
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+        
+        // --- 辅助元素: 添加一个简单的网格地面 (参考，但不是必须，为了视觉效果) ---
+        const gridHelper = new THREE.GridHelper(10, 20, 0x88aaff, 0x335588);
+        gridHelper.position.y = -1.5;
+        gridHelper.visible = false; // 默认隐藏，避免干扰，但可以开启作为参考
+        scene.add(gridHelper);
+        
+        // 添加一些环境光，让立方体材质有光泽
+        const ambientLight = new THREE.AmbientLight(0x404060);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(1, 2, 1);
+        scene.add(directionalLight);
+        const backLight = new THREE.PointLight(0x4466cc, 0.5);
+        backLight.position.set(0, 1, -2);
+        scene.add(backLight);
+        
+        // --- 创建要显示的3D模型: 一个带纹理的旋转立方体，并且带边缘高亮 ---
+        const geometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+        // 使用标准材质，颜色鲜艳
+        const material = new THREE.MeshStandardMaterial({ color: 0xff6633, metalness: 0.6, roughness: 0.3 });
+        const cube = new THREE.Mesh(geometry, material);
+        // 添加边缘线框，增强科技感
+        const edgesGeo = new THREE.EdgesGeometry(geometry);
+        const edgesMat = new THREE.LineBasicMaterial({ color: 0xffaa88 });
+        const wireframe = new THREE.LineSegments(edgesGeo, edgesMat);
+        cube.add(wireframe);
+        
+        // 添加一个围绕立方体的光环粒子效果 (简单小圆环)
+        const ringGeo = new THREE.TorusGeometry(0.55, 0.05, 16, 100);
+        const ringMat = new THREE.MeshStandardMaterial({ color: 0x44aaff, emissive: 0x2266aa });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = Math.PI / 2;
+        cube.add(ring);
+        
+        scene.add(cube);
+        
+        // 默认隐藏立方体，直到检测到二维码
+        cube.visible = false;
+        
+        // 可选: 添加一个CSS2D标签显示二维码内容 (增强交互)
+        let qrTextDiv = null;
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.left = '0px';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        document.body.appendChild(labelRenderer.domElement);
+        
+        // 创建CSS2D对象用于显示二维码文本
+        const qrLabelDiv = document.createElement('div');
+        qrLabelDiv.style.backgroundColor = 'rgba(0,0,0,0.7)';
+        qrLabelDiv.style.color = '#00ffcc';
+        qrLabelDiv.style.fontSize = '12px';
+        qrLabelDiv.style.padding = '4px 8px';
+        qrLabelDiv.style.borderRadius = '12px';
+        qrLabelDiv.style.border = '1px solid #00ffcc';
+        qrLabelDiv.style.fontFamily = 'monospace';
+        qrLabelDiv.style.whiteSpace = 'nowrap';
+        qrLabelDiv.textContent = '';
+        const qrLabelObj = new CSS2DObject(qrLabelDiv);
+        scene.add(qrLabelObj);
+        qrLabelObj.visible = false;
+        
+        // --- 视频纹理背景部分 ---
+        // 创建 video 元素用于获取摄像头流，同时也用于二维码识别 (同一个流)
+        const video = document.createElement('video');
+        video.setAttribute('autoplay', '');
+        video.setAttribute('playsinline', '');
+        video.style.display = 'none'; // 隐藏原生video，我们将它作为纹理源
+        document.body.appendChild(video);
+        
+        // 创建背景平面，将视频纹理贴上去，这样3D物体看起来就像叠加在视频上
+        let videoTexture = null;
+        let backgroundPlane = null;
+        
+        // 辅助函数: 获取视频实际尺寸并调整背景平面比例
+        function updateBackgroundPlane(videoWidth, videoHeight) {
+            if (!backgroundPlane) {
+                // 创建平面几何体，初始大小1x1，后续根据相机视野调整
+                const geometry = new THREE.PlaneGeometry(1, 1);
+                const material = new THREE.MeshBasicMaterial({ map: videoTexture, side: THREE.DoubleSide });
+                backgroundPlane = new THREE.Mesh(geometry, material);
+                scene.add(backgroundPlane);
+            }
+            
+            // 计算平面应该放置的位置和大小，使其充满相机视野
+            // 相机位于 (0,0,5)，视野60度，垂直高度 = 2 * tan(30°) * 距离，距离设为4.9，让平面刚好在相机前面一点
+            const distance = 4.9;
+            const vFov = camera.fov * Math.PI / 180;
+            const planeHeight = 2 * Math.tan(vFov / 2) * distance;
+            const planeWidth = planeHeight * (videoWidth / videoHeight);
+            
+            backgroundPlane.scale.set(planeWidth, planeHeight, 1);
+            backgroundPlane.position.set(0, 0, -distance + 0.01); // 放在相机前方，物体之前
+            backgroundPlane.material.map = videoTexture;
+            backgroundPlane.material.needsUpdate = true;
+        }
+        
+        // --- 二维码检测相关变量 ---
+        let detectionActive = true;
+        let lastQrData = null;      // 存储二维码数据
+        let qrCornerPoints = null;   // 存储四个角点 (归一化坐标)
+        let qrCenter = { x: 0, y: 0 }; // 中心点归一化坐标 (0-1)
+        
+        // 用于平滑移动的系数 (使模型移动更平滑)
+        let currentModelPos = new THREE.Vector3(0, 0, 0);
+        let targetModelPos = new THREE.Vector3(0, 0, 0);
+        
+        // 辅助: 将视频中的归一化坐标 (0-1, 左上角为原点) 转换为Three.js世界坐标中，位于相机前方固定距离平面上的点
+        // 原理: 根据相机视野和投影矩阵，将屏幕坐标转换为世界坐标，深度固定为 modelDepth (正值在相机前方)
+        function screenToWorld(nx, ny, depth = 3.0) {
+            // nx, ny 范围 0-1, 原点左上角，Y轴向下
+            // 转换为NDC坐标 (-1 到 1, Y向上)
+            const ndcX = nx * 2 - 1;
+            const ndcY = -(ny * 2 - 1);
+            // 从相机坐标计算: 射线方向
+            const vector = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(camera);
+            const dir = vector.sub(camera.position).normalize();
+            // 计算射线在 Z 轴方向距离为 depth 的点 (相机空间Z = depth)
+            // 由于相机看向 -Z，所以物体位置 = 相机位置 + 方向 * depth
+            return camera.position.clone().add(dir.multiplyScalar(depth));
+        }
+        
+        // 获取摄像头的视频流
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
+                });
+                video.srcObject = stream;
+                await video.play();
+                
+                // 等待视频元数据加载完成
+                await new Promise((resolve) => {
+                    if (video.videoWidth > 0) resolve();
+                    else video.onloadedmetadata = () => resolve();
+                });
+                
+                const statusDiv = document.getElementById('status');
+                statusDiv.innerHTML = '✅ 摄像头已启动 | 正在识别二维码...';
+                statusDiv.style.color = '#aaffaa';
+                
+                // 创建视频纹理
+                videoTexture = new THREE.VideoTexture(video);
+                videoTexture.minFilter = THREE.LinearFilter;
+                videoTexture.magFilter = THREE.LinearFilter;
+                videoTexture.format = THREE.RGBFormat;
+                
+                // 更新背景平面尺寸
+                updateBackgroundPlane(video.videoWidth, video.videoHeight);
+                
+                // 开始检测循环
+                startDetectionLoop();
+                
+            } catch (err) {
+                console.error("摄像头访问失败:", err);
+                document.getElementById('status').innerHTML = '❌ 无法访问摄像头，请确保使用HTTPS或localhost，并允许权限';
+                document.getElementById('status').style.color = '#ff8888';
+            }
+        }
+        
+        // 二维码检测循环 (每帧检测)
+        function startDetectionLoop() {
+            function detectQR() {
+                if (!detectionActive || video.readyState !== video.HAVE_ENOUGH_DATA) {
+                    requestAnimationFrame(detectQR);
+                    return;
+                }
+                
+                // 获取视频帧数据
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const width = video.videoWidth;
+                const height = video.videoHeight;
+                if (width === 0 || height === 0) {
+                    requestAnimationFrame(detectQR);
+                    return;
+                }
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(video, 0, 0, width, height);
+                const imageData = ctx.getImageData(0, 0, width, height);
+                
+                // 使用 jsQR 解析二维码
+                const code = jsQR(imageData.data, width, height, {
+                    inversionAttempts: "dontInvert",
+                });
+                
+                if (code) {
+                    // 检测到二维码
+                    const { data, location } = code;
+                    // 计算中心点 (归一化坐标)
+                    const centerX = (location.topLeftCorner.x + location.bottomRightCorner.x) / 2 / width;
+                    const centerY = (location.topLeftCorner.y + location.bottomRightCorner.y) / 2 / height;
+                    qrCenter = { x: centerX, y: centerY };
+                    lastQrData = data;
+                    qrCornerPoints = location;
+                    
+                    // 更新状态栏显示内容
+                    const statusDiv = document.getElementById('status');
+                    let shortData = data.length > 30 ? data.substring(0, 27) + '...' : data;
+                    statusDiv.innerHTML = `📲 识别到二维码: ${shortData} | 模型已显示`;
+                    statusDiv.style.color = '#88ffaa';
+                    
+                    // 显示立方体并更新CSS2D标签
+                    cube.visible = true;
+                    qrLabelObj.visible = true;
+                    qrLabelDiv.textContent = `📌 ${shortData}`;
+                    
+                    // 计算目标位置: 将二维码中心点映射到3D空间中，深度为 2.5 (让模型在背景平面之前)
+                    // 由于背景平面在 Z = -4.9 处，相机在 Z=0，模型深度建议 2.0 到 3.0 之间，看起来在背景前方
+                    const depth = 2.8;
+                    targetModelPos = screenToWorld(centerX, centerY, depth);
+                    
+                    // 同时更新CSS2D标签位置 (让标签在模型上方一点)
+                    const labelDepth = depth + 0.15;
+                    const labelPos = screenToWorld(centerX, centerY, labelDepth);
+                    qrLabelObj.position.copy(labelPos);
+                    
+                } else {
+                    // 未检测到二维码，隐藏模型和标签
+                    if (cube.visible) {
+                        cube.visible = false;
+                        qrLabelObj.visible = false;
+                        document.getElementById('status').innerHTML = '🔍 未检测到二维码 | 对准任意二维码即可显示3D模型';
+                        document.getElementById('status').style.color = '#ffaa66';
+                        lastQrData = null;
+                    }
+                }
+                
+                requestAnimationFrame(detectQR);
+            }
+            
+            detectQR();
+        }
+        
+        // 辅助: 让立方体持续旋转并添加脉动效果
+        let time = 0;
+        
+        // 动画循环: 更新立方体位置平滑跟随，并处理旋转/动画
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.02;
+            
+            // 平滑移动模型 (Lerp)
+            if (cube.visible) {
+                // 使用线性插值使移动更平滑
+                currentModelPos.lerp(targetModelPos, 0.25);
+                cube.position.copy(currentModelPos);
+                
+                // 让立方体自身旋转
+                cube.rotation.x = Math.sin(time * 1.5) * 0.3;
+                cube.rotation.y = time * 1.2;
+                cube.rotation.z = Math.sin(time * 0.8) * 0.2;
+                
+                // 光环旋转
+                if (cube.children.includes(ring)) {
+                    ring.rotation.z = time * 2;
+                    ring.rotation.x = Math.sin(time) * 0.5;
+                }
+                
+                // 轻微缩放脉动
+                const scale = 1 + Math.sin(time * 8) * 0.05;
+                cube.scale.set(scale, scale, scale);
+                
+                // CSS2D标签始终面向相机 (CSS2DRenderer自动面向相机，无需处理)
+                // 但让标签位置稍微偏移，避免遮挡模型
+                if (qrLabelObj.visible) {
+                    // 可以动态调整标签位置基于模型位置，已经在detect中更新，但为了平滑，再偏移一下
+                    // 这里简单让其位于模型上方0.5单位
+                    qrLabelObj.position.y = cube.position.y + 0.9;
+                }
+            } else {
+                // 无二维码时，重置位置变量
+                currentModelPos.set(0, 0, 0);
+            }
+            
+            // 相机轻微晃动或固定，这里让相机保持位置 (也可以根据模型位置调整，但保持固定更稳定)
+            // 如果有需要，可以保持相机看向模型，但为了AR体验，相机不动
+            
+            // 渲染Three.js场景
+            renderer.render(scene, camera);
+            // 渲染CSS2D标签
+            labelRenderer.render(scene, camera);
+        }
+        
+        // 处理窗口尺寸变化
+        function onWindowResize() {
+            const aspect = window.innerWidth / window.innerHeight;
+            camera.aspect = aspect;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            
+            // 重新调整背景平面尺寸 (如果视频纹理已加载)
+            if (videoTexture && video.videoWidth > 0) {
+                updateBackgroundPlane(video.videoWidth, video.videoHeight);
+            }
+        }
+        
+        window.addEventListener('resize', onWindowResize);
+        
+        // 启动摄像头和动画
+        initCamera();
+        animate();
+        
+        // 可选: 添加一个小提示控制台输出
+        console.log('AR演示已启动，将摄像头对准任意二维码，即可看到3D立方体附着在二维码上');
+        
+        // 增加触摸/点击辅助提示 (可选)
+        const style = document.createElement('style');
+        style.textContent = `
+            canvas {
+                outline: none;
+                cursor: crosshair;
+            }
+            .css2d-object {
+                transition: all 0.05s linear;
+                white-space: nowrap;
+                font-weight: bold;
+                backdrop-filter: blur(4px);
+                box-shadow: 0 0 8px rgba(0,255,200,0.3);
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // 简单的错误处理：如果用户拒绝摄像头，显示友好提示
+        window.addEventListener('error', (e) => {
+            if (e.message && e.message.includes('getUserMedia')) {
+                document.getElementById('status').innerHTML = '⚠️ 无法获取摄像头权限，请检查浏览器设置';
+            }
+        });
+    </script>
+</body>
+</html>
