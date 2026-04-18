@@ -332,10 +332,10 @@
         function loadModel() {
             modelGroup.clear();
             mtlLoader.setResourcePath('https://threejs.org/examples/models/obj/cerberus/');
-            mtlLoader.load('https://threejs.org/examples/models/obj/cerberus/Cerberus.mtl', (materials) => {
+            mtlLoader.load('https://github.com/Hmis556/Hmis556/blob/main/3D_PCB1.mtl', (materials) => {
                 materials.preload();
                 objLoader.setMaterials(materials);
-                objLoader.load('https://threejs.org/examples/models/obj/cerberus/Cerberus.obj', (obj) => {
+                objLoader.load('https://github.com/Hmis556/Hmis556/blob/main/3D_PCB1.obj', (obj) => {
                     obj.scale.set(0.8, 0.8, 0.8);
                     obj.position.y = -0.2;
                     obj.rotation.y = Math.PI;
