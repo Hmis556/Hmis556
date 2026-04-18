@@ -3,25 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>纯前端 AR：二维码上显示 3D 立方体</title>
+    <title>纯前端 AR：二维码上方悬浮视频窗口（旋转）</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            font-family: 'Segoe UI', sans-serif;
             background-color: black;
+            font-family: 'Segoe UI', sans-serif;
         }
         #info {
             position: absolute;
             top: 20px;
             left: 20px;
             color: white;
-            background: rgba(0,0,0,0.6);
+            background: rgba(0,0,0,0.5);
             padding: 8px 16px;
             border-radius: 30px;
             z-index: 10;
             pointer-events: none;
             font-size: 14px;
+            backdrop-filter: blur(4px);
         }
         #status {
             position: absolute;
@@ -29,12 +30,11 @@
             left: 0;
             right: 0;
             text-align: center;
-            color: #aaa;
+            color: #ccc;
             z-index: 10;
             pointer-events: none;
-            text-shadow: 1px 1px 3px black;
+            text-shadow: 1px 1px 3px #000;
         }
-        /* 视频和 canvas 全屏叠层 */
         #container {
             position: relative;
             width: 100vw;
@@ -49,23 +49,25 @@
             height: 100%;
             object-fit: cover;
         }
-        /* Three.js 渲染的 canvas 背景透明，以便看到后面的视频 */
         #canvas3d {
             z-index: 2;
-            pointer-events: none;  /* 让点击穿透到视频（如果需要） */
+            pointer-events: none;
         }
         #video {
             z-index: 1;
-            transform: scaleX(-1); /* 镜像，像自拍一样更自然（可选） */
+            transform: scaleX(-1); /* 镜像效果，更自然 */
         }
-        /* 用于 jsQR 处理的隐藏 canvas */
         #hiddenCanvas {
+            display: none;
+        }
+        /* 用于视频纹理的 video 元素不可见 */
+        #textureVideo {
             display: none;
         }
     </style>
 </head>
 <body>
-    <div id="info">📷 扫描二维码，上方会出现 3D 立方体</div>
+    <div id="info">🎬 扫描二维码，上方出现旋转视频窗口</div>
     <div id="status">🔄 正在启动摄像头...</div>
 
     <div id="container">
@@ -74,8 +76,15 @@
     </div>
 
     <canvas id="hiddenCanvas"></canvas>
+    
+    <!-- 视频纹理源：播放一个示例视频（可替换为本地/在线视频） -->
+    <video id="textureVideo" loop muted crossorigin="anonymous" playsinline>
+        <!-- 使用一个公开的测试视频流，支持 CORS -->
+        <source src="https://vd3.bdstatic.com/mda-qk8ezrfkpt4cxaw9/sc/cae_h264/1731149052454873468/mda-qk8ezrfkpt4cxaw9.mp4" type="video/mp4">
+        您的浏览器不支持 video 标签。
+    </video>
 
-    <!-- 引入依赖库 -->
+    <!-- 依赖库 -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script type="importmap">
         {
@@ -94,84 +103,83 @@
         const hiddenCanvas = document.getElementById('hiddenCanvas');
         const hiddenCtx = hiddenCanvas.getContext('2d', { willReadFrequently: true });
         const statusDiv = document.getElementById('status');
+        const textureVideo = document.getElementById('textureVideo');
+
+        // --- 启动纹理视频播放（需要用户手势，我们尝试自动播放）---
+        textureVideo.play().catch(e => {
+            console.warn('视频自动播放被阻止，请点击页面任意位置启动视频');
+            statusDiv.innerText = '⚠️ 点击屏幕以播放视频窗口';
+            // 添加一次性点击监听
+            document.body.addEventListener('click', () => {
+                textureVideo.play();
+                statusDiv.innerText = '🔍 扫描中...';
+            }, { once: true });
+        });
 
         // --- Three.js 初始化 ---
         const scene = new THREE.Scene();
         
-        // 透视相机：根据视频比例动态调整（后续会更新）
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.set(0, 0, 5);
         
         const renderer = new THREE.WebGLRenderer({ 
             canvas: canvas3d, 
-            alpha: true,  // 背景透明，露出视频
+            alpha: true, 
             antialias: true 
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-        // --- 光照 (让立方体有立体感) ---
-        // 环境光
-        scene.add(new THREE.AmbientLight(0x404040));
-        // 主光源 - 方向光
-        const dirLight1 = new THREE.DirectionalLight(0xffffff, 1);
-        dirLight1.position.set(1, 2, 1);
-        scene.add(dirLight1);
-        const dirLight2 = new THREE.DirectionalLight(0xffaa88, 0.5);
-        dirLight2.position.set(-2, 1, 2);
-        scene.add(dirLight2);
-        // 背面补光
+        // --- 光照 (让窗口边框有些立体感) ---
+        const ambientLight = new THREE.AmbientLight(0x404060);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(1, 2, 1);
+        scene.add(dirLight);
         const backLight = new THREE.PointLight(0x4466ff, 0.3);
-        backLight.position.set(0, 1, -2);
+        backLight.position.set(-1, 0.5, -2);
         scene.add(backLight);
 
-        // --- 创建立方体 (带线框效果更好看) ---
-        const cubeSize = 0.8;
-        const geometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
-        // 半透明材质 + 边缘线框
-        const material = new THREE.MeshStandardMaterial({ 
-            color: 0x00aaff, 
-            emissive: new THREE.Color(0x004466),
-            roughness: 0.3,
-            metalness: 0.1,
-            transparent: true,
-            opacity: 0.85
+        // --- 创建视频纹理 ---
+        const videoTexture = new THREE.VideoTexture(textureVideo);
+        videoTexture.minFilter = THREE.LinearFilter;
+        videoTexture.magFilter = THREE.LinearFilter;
+        videoTexture.format = THREE.RGBAFormat;
+
+        // --- 创建视频窗口 (平面) ---
+        // 设定窗口宽高比与视频一致，或固定比例
+        const aspectRatio = 16 / 9; // 宽高比，可根据视频调整
+        const planeWidth = 1.8;
+        const planeHeight = planeWidth / aspectRatio;
+        
+        const planeGeometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
+        const planeMaterial = new THREE.MeshStandardMaterial({
+            map: videoTexture,
+            side: THREE.DoubleSide,  // 让背面也可见（旋转时能看到背面视频镜像，可以接受）
+            emissive: new THREE.Color(0x222222),
+            roughness: 0.4,
+            metalness: 0.1
         });
-        const cube = new THREE.Mesh(geometry, material);
         
-        // 添加边缘线框
-        const edges = new THREE.EdgesGeometry(geometry);
-        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff }));
-        cube.add(line); // 将线框作为立方体的子元素，一起移动旋转
+        const videoPlane = new THREE.Mesh(planeGeometry, planeMaterial);
         
-        scene.add(cube);
-
-        // 添加一个小的底座平面指示器（可选），用于视觉对齐二维码中心
-        const planeGeo = new THREE.PlaneGeometry(1.0, 1.0);
-        const planeMat = new THREE.MeshStandardMaterial({ color: 0x3366ff, side: THREE.DoubleSide, transparent: true, opacity: 0.2 });
-        const plane = new THREE.Mesh(planeGeo, planeMat);
-        plane.rotation.x = -Math.PI / 2; // 平躺
-        plane.position.y = -cubeSize/2 - 0.1;
-        cube.add(plane);
-
-        // 初始隐藏立方体，直到检测到二维码
-        cube.visible = false;
-
-        // 添加一个辅助网格（可选），调试时可取消注释
-        // const gridHelper = new THREE.GridHelper(10, 20, 0x888888, 0x444444);
-        // scene.add(gridHelper);
-        // const axesHelper = new THREE.AxesHelper(5);
-        // scene.add(axesHelper);
+        // --- 添加一个发光的边框，使其更像“悬浮窗口” ---
+        const edges = new THREE.EdgesGeometry(planeGeometry);
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x88ccff }));
+        videoPlane.add(line); // 边框随平面一起移动旋转
+        
+        // 添加一个微弱的发光光晕效果（用一个小一点的平面放在后面？简单处理：加一个点光源跟随）
+        
+        scene.add(videoPlane);
+        
+        // 初始隐藏，直到检测到二维码
+        videoPlane.visible = false;
 
         // --- 二维码检测相关变量 ---
-        let videoWidth = 640;
-        let videoHeight = 480;
         let canvasWidth = 640;
         let canvasHeight = 480;
-        
-        // 存储检测到的二维码角点 (用于计算位置/旋转)
         let qrCorners = null;
-        let qrCenter = { x: 0.5, y: 0.5 }; // 归一化坐标 0-1
+        let qrCenter = { x: 0.5, y: 0.5 };
         let qrDetected = false;
 
         // --- 启动摄像头 ---
@@ -179,19 +187,17 @@
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { 
-                        facingMode: 'environment', // 优先后置摄像头
+                        facingMode: 'environment',
                         width: { ideal: 1280 },
                         height: { ideal: 720 }
                     } 
                 });
                 video.srcObject = stream;
                 
-                // 等待视频元数据加载
                 await new Promise(resolve => {
                     video.onloadedmetadata = () => {
-                        videoWidth = video.videoWidth;
-                        videoHeight = video.videoHeight;
-                        // 设置处理画布大小 (为了性能，可以适当缩小)
+                        const videoWidth = video.videoWidth;
+                        const videoHeight = video.videoHeight;
                         const maxDim = 800;
                         if (videoWidth > maxDim || videoHeight > maxDim) {
                             const ratio = videoWidth / videoHeight;
@@ -215,30 +221,25 @@
                     video.play();
                 });
 
-                // 开始检测循环
                 requestAnimationFrame(tick);
             } catch (err) {
-                console.error('摄像头错误:', err);
-                statusDiv.innerText = '❌ 无法访问摄像头，请确保已授权并在 HTTPS/localhost 下运行';
+                console.error(err);
+                statusDiv.innerText = '❌ 无法访问摄像头';
             }
         }
 
-        // --- 二维码检测 (使用 jsQR) ---
+        // --- 二维码检测 ---
         function detectQRCode() {
             if (video.readyState !== video.HAVE_ENOUGH_DATA) return false;
             
-            // 将当前视频帧绘制到隐藏 canvas 上 (并缩放至处理尺寸)
             hiddenCtx.drawImage(video, 0, 0, canvasWidth, canvasHeight);
             const imageData = hiddenCtx.getImageData(0, 0, canvasWidth, canvasHeight);
             
-            // 使用 jsQR 解析
             const code = jsQR(imageData.data, canvasWidth, canvasHeight, {
                 inversionAttempts: "dontInvert",
             });
             
             if (code) {
-                // 获取角点: location.topLeftCorner, topRightCorner, bottomRightCorner, bottomLeftCorner
-                // 这些坐标是相对于 canvasWidth/canvasHeight 的
                 const corners = code.location;
                 qrCorners = {
                     topLeft: corners.topLeftCorner,
@@ -247,7 +248,6 @@
                     bottomLeft: corners.bottomLeftCorner
                 };
                 
-                // 计算中心点 (归一化坐标 0~1)
                 const centerX = (corners.topLeftCorner.x + corners.topRightCorner.x + corners.bottomRightCorner.x + corners.bottomLeftCorner.x) / 4;
                 const centerY = (corners.topLeftCorner.y + corners.topRightCorner.y + corners.bottomRightCorner.y + corners.bottomLeftCorner.y) / 4;
                 
@@ -257,90 +257,79 @@
                 };
                 
                 qrDetected = true;
-                statusDiv.innerHTML = `📱 检测到二维码: ${code.data}`;
+                statusDiv.innerHTML = `📱 检测到: ${code.data.substring(0, 30)}${code.data.length > 30 ? '...' : ''}`;
                 return true;
             } else {
                 qrDetected = false;
-                statusDiv.innerHTML = '🔍 扫描中，请将二维码置于画面内...';
+                statusDiv.innerHTML = '🔍 扫描中，将二维码置于画面内...';
                 return false;
             }
         }
 
-        // --- 根据二维码位置更新立方体的 3D 位置与旋转 ---
-        function updateCubeTransform() {
+        // --- 更新视频窗口的位置与基础旋转 ---
+        function updatePlaneTransform() {
             if (!qrDetected || !qrCorners) {
-                cube.visible = false;
+                videoPlane.visible = false;
                 return;
             }
             
-            cube.visible = true;
+            videoPlane.visible = true;
             
-            // 将归一化坐标 (0~1) 映射到 Three.js 世界坐标
-            // 我们希望立方体出现在二维码的正上方，并且当二维码在画面边缘时也能正确显示
-            // 思路：将屏幕坐标系映射到相机前方的平面 (z = 0 平面)
-            // 先计算相机的视口范围在 z=0 处的宽度和高度
-            const distance = 5; // 相机到 z=0 平面的距离 (camera.position.z = 5)
+            // 计算世界坐标映射
+            const distance = 5;
             const vFOV = camera.fov * Math.PI / 180;
             const heightVisible = 2 * Math.tan(vFOV / 2) * distance;
             const widthVisible = heightVisible * camera.aspect;
             
-            // 将归一化坐标 (0~1) 映射到世界坐标范围：
-            // 屏幕坐标原点在左上角，x向右，y向下
-            // Three.js 世界坐标：中心在 (0,0)，x向右，y向上
             const worldX = (qrCenter.x - 0.5) * widthVisible;
-            const worldY = -(qrCenter.y - 0.5) * heightVisible; // 注意 Y 轴反向
+            const worldY = -(qrCenter.y - 0.5) * heightVisible;
             
-            // 设置立方体位置 (z=0 平面，稍微抬高使其浮在二维码上方)
-            cube.position.set(worldX, worldY + 0.8, 0);
+            // 窗口位置：抬高到二维码上方
+            videoPlane.position.set(worldX, worldY + 0.8, 0);
             
-            // --- 计算旋转，使立方体的一面对齐二维码的方向 (基于两个边向量) ---
+            // 根据二维码方向调整基础旋转
             if (qrCorners) {
                 const tl = qrCorners.topLeft;
                 const tr = qrCorners.topRight;
-                const br = qrCorners.bottomRight;
-                
-                // 计算上边向量 (从左上到右上) 和左边向量 (从左上到左下)
-                // 但为了稳定，我们计算两个边的平均方向向量
                 const upVec = { x: tr.x - tl.x, y: tr.y - tl.y };
-                const leftVec = { x: qrCorners.bottomLeft.x - tl.x, y: qrCorners.bottomLeft.y - tl.y };
-                
-                // 计算二维码在2D图像中的旋转角度 (以弧度表示)
-                // 使用上边向量的角度
                 let angle = Math.atan2(upVec.y, upVec.x);
                 
-                // 由于立方体默认朝前，我们让它绕 Y 轴旋转以匹配二维码方向
-                // 同时考虑一点绕 X 轴的倾斜 (根据透视效果简单处理)
-                cube.rotation.y = angle;
+                // 保留基础旋转角度，后续会在动画中叠加自转
+                videoPlane.userData.baseRotationY = angle;
                 
-                // 轻微绕 X 轴旋转，模拟倾斜 (可选)
-                // 计算一个简单的透视缩放因子：二维码越大，立方体越大
+                // 根据二维码大小调整窗口缩放
                 const edgeLength = Math.sqrt(upVec.x*upVec.x + upVec.y*upVec.y);
-                const scaleFactor = Math.min(Math.max(edgeLength / 150, 0.6), 1.5);
-                cube.scale.setScalar(scaleFactor);
+                const scaleFactor = Math.min(Math.max(edgeLength / 150, 0.7), 1.8);
+                videoPlane.scale.setScalar(scaleFactor);
             }
-            
-            // 添加一点自转动画 (在原有旋转基础上每帧增加)
-            // 我们不在 update 里累加，而是保留到动画循环里做
         }
 
-        // --- 动画循环：检测 + 更新 + 渲染 ---
+        // --- 动画循环 ---
+        let time = 0;
         function tick() {
-            // 1. 检测二维码
+            // 检测二维码
             detectQRCode();
             
-            // 2. 更新立方体位置和基础旋转
-            updateCubeTransform();
+            // 更新位置和基础方向
+            updatePlaneTransform();
             
-            // 3. 让立方体自身缓慢旋转 (动画效果)
-            if (cube.visible) {
-                cube.rotation.x += 0.005;
-                cube.rotation.z += 0.003;
+            // 让窗口持续旋转 (绕 Y 轴和 X 轴轻微摆动)
+            if (videoPlane.visible) {
+                time += 0.01;
+                // 基础旋转来自二维码方向，再叠加动态旋转
+                const baseY = videoPlane.userData.baseRotationY || 0;
+                videoPlane.rotation.y = baseY + Math.sin(time * 0.5) * 0.3;
+                videoPlane.rotation.x = Math.sin(time * 0.3) * 0.1;
+                videoPlane.rotation.z = Math.cos(time * 0.2) * 0.05;
+                
+                // 确保视频纹理更新
+                if (textureVideo.readyState >= textureVideo.HAVE_CURRENT_DATA) {
+                    videoTexture.needsUpdate = true;
+                }
             }
             
-            // 4. 渲染 Three.js 场景
             renderer.render(scene, camera);
             
-            // 继续下一帧
             requestAnimationFrame(tick);
         }
 
@@ -348,23 +337,14 @@
         function handleResize() {
             const width = window.innerWidth;
             const height = window.innerHeight;
-            
             renderer.setSize(width, height);
             camera.aspect = width / height;
             camera.updateProjectionMatrix();
-            
-            // 视频画布大小由 CSS 控制，无需额外操作
         }
         window.addEventListener('resize', handleResize);
 
-        // --- 处理视频比例与相机 FOV 的匹配 (确保视觉一致性) ---
-        // 由于视频可能不是 16:9，而相机默认 aspect 基于窗口，我们已经在 resize 和初始化时处理了
-        
-        // --- 启动一切 ---
+        // 启动
         startCamera();
-
-        // 简单的初始提示
-        console.log('纯前端 AR 示例 - 将二维码置于摄像头前，上方会出现 3D 立方体');
     </script>
 </body>
 </html>
