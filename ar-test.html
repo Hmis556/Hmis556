@@ -2,348 +2,209 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>🔐 AES-ECB · 扫码解密卡片</title>
-  <!-- 加密库 & 二维码扫描库 & 二维码生成库 (仅用于演示密钥) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>🔐 暗流·多阶响应 · AES-ECB 解密</title>
+  <!-- Tailwind CSS (成熟框架) + 自定义多阶微调 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 加密库 & 二维码扫描 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
-    }
+    /* 自定义增强：毛玻璃、流式光标、多阶安全区适配 */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    * { font-family: 'Inter', system-ui, sans-serif; }
     body {
-      background: linear-gradient(145deg, #f0f5fa 0%, #e6edf4 100%);
+      background: radial-gradient(circle at 20% 20%, #132433, #050b12);
       min-height: 100vh;
-      padding: 20px 16px 32px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
     }
-    .card-container {
-      max-width: 1200px;
-      width: 100%;
-      margin: 0 auto;
-    }
-    h1 {
-      font-weight: 600;
-      font-size: 2.1rem;
-      letter-spacing: -0.5px;
-      color: #1a2e3b;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 8px;
-    }
-    h1 i {
-      font-size: 2rem;
-    }
-    .subtitle {
-      color: #2c4b60;
-      margin-bottom: 28px;
-      font-weight: 400;
-      border-left: 5px solid #1e88e5;
-      padding-left: 20px;
-      background: rgba(255,255,255,0.4);
-      border-radius: 0 20px 20px 0;
-      line-height: 1.4;
-    }
-    .two-columns {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-    }
-    @media (max-width: 720px) {
-      .two-columns {
-        grid-template-columns: 1fr;
-        gap: 20px;
-      }
-      h1 { font-size: 1.8rem; }
-    }
-    /* 卡片通用 */
-    .panel {
-      background: rgba(255,255,255,0.75);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-radius: 32px;
-      padding: 24px 22px;
-      box-shadow: 0 20px 35px -8px rgba(0,20,40,0.15), 0 2px 8px rgba(0,0,0,0.02);
-      border: 1px solid rgba(255,255,255,0.5);
-      transition: all 0.2s;
-    }
-    .panel-title {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 600;
-      font-size: 1.4rem;
-      color: #0f2a38;
-      margin-bottom: 18px;
-      border-bottom: 2px dashed #b0c8da;
-      padding-bottom: 12px;
-    }
-    .panel-title span {
-      background: #1e3b4f;
-      color: white;
-      border-radius: 40px;
-      padding: 2px 14px;
-      font-size: 0.9rem;
-    }
-    /* 扫描区域 */
-    #reader {
-      width: 100%;
-      border-radius: 24px;
-      overflow: hidden;
-      background: #0b1a26;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
-      margin-bottom: 18px;
-      min-height: 240px;
-    }
-    #reader video {
-      border-radius: 24px;
-      object-fit: cover;
-    }
-    .scan-controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
-    }
-    .btn {
-      background: #1e3b4f;
-      border: none;
-      color: white;
-      padding: 12px 24px;
-      border-radius: 60px;
-      font-weight: 600;
-      font-size: 1rem;
-      cursor: pointer;
-      box-shadow: 0 8px 14px -6px rgba(20,60,90,0.3);
-      backdrop-filter: blur(4px);
-      border: 1px solid rgba(255,255,255,0.15);
-      transition: 0.15s;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .btn:hover {
-      background: #264f68;
-      transform: translateY(-2px);
-      box-shadow: 0 14px 20px -8px #1a3f55;
-    }
-    .btn-outline {
-      background: transparent;
-      color: #1a3f55;
-      border: 1.5px solid #1e3b4f;
-      box-shadow: none;
-      backdrop-filter: none;
-    }
-    .btn-outline:hover {
-      background: rgba(30,59,79,0.08);
-      transform: translateY(-1px);
-    }
-    .status-badge {
-      margin-left: auto;
-      background: #eef3f7;
-      padding: 6px 16px;
-      border-radius: 40px;
-      font-size: 0.9rem;
-      color: #1e3b4f;
-      font-weight: 500;
-    }
-    /* 解密原理/日志区 */
-    .log-box {
-      background: #0f2029;
-      color: #b3e4ff;
-      padding: 18px 18px;
-      border-radius: 20px;
-      font-family: 'JetBrains Mono', 'Fira Code', monospace;
-      font-size: 0.9rem;
-      line-height: 1.6;
-      margin: 20px 0 10px;
-      border-left: 6px solid #1e88e5;
-      max-height: 180px;
-      overflow-y: auto;
-      box-shadow: inset 0 0 20px #0000001a;
+    /* 玻璃效果 + 响应式内边距将通过Tailwind实现，这里保留额外动画 */
+    .glass-panel {
+      background: rgba(12, 25, 38, 0.7);
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+      border: 1px solid rgba(0, 150, 255, 0.12);
+      box-shadow: 0 20px 40px -12px rgba(0,0,0,0.7), 0 0 0 0.5px rgba(64, 164, 255, 0.1) inset;
     }
     .log-line {
-      opacity: 0.9;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-    .typewriter {
-      border-right: 2px solid #64b5f6;
-      animation: blink 1s infinite;
-    }
-    @keyframes blink {
-      0%,100%{ border-color: #64b5f6 }
-      50%{ border-color: transparent }
-    }
-    /* 密钥二维码卡片 */
-    .demo-qr {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin: 16px 0 12px;
-    }
-    #demoQrCanvas {
-      border-radius: 24px;
-      background: white;
-      padding: 12px;
-      box-shadow: 0 6px 14px rgba(0,0,0,0.08);
-      width: 160px;
-      height: 160px;
-    }
-    .key-hint {
-      background: #d4e2ed;
-      border-radius: 28px;
-      padding: 6px 18px;
-      font-family: monospace;
-      font-weight bold;
-      color: #003153;
-      margin-top: 12px;
-      font-size: 1rem;
-    }
-    /* 解密结果卡片 (持有人信息) */
-    .result-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px 20px;
-      margin-top: 16px;
-    }
-    .info-item {
-      background: white;
-      border-radius: 24px;
-      padding: 12px 18px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.02);
-      border: 1px solid rgba(0,0,0,0.03);
-    }
-    .info-label {
+      border-left: 3px solid #3b82f6;
+      padding-left: 0.75rem;
+      margin: 0.5rem 0;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
       font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #54738f;
-      margin-bottom: 6px;
     }
-    .info-value {
-      font-size: 1.6rem;
-      font-weight: 700;
-      color: #0a1c2a;
-      line-height: 1.2;
-      word-break: break-word;
+    @media (min-width: 640px) {
+      .log-line { font-size: 0.85rem; }
     }
-    .placeholder-message {
-      color: #6f8a9c;
-      font-style: italic;
-      padding: 24px 0;
-      text-align: center;
+    @media (min-width: 1024px) {
+      .log-line { font-size: 0.9rem; }
     }
-    .footnote {
-      margin-top: 24px;
-      color: #3c6079;
-      font-size: 0.9rem;
-      text-align: center;
+    .typewriter-cursor::after {
+      content: '▋';
+      animation: blink 1s infinite;
+      color: #60a5fa;
     }
-    .flex-between {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    #reader video {
+      border-radius: 1.5rem !important;
+      object-fit: cover;
+    }
+    #reader {
+      border-radius: 1.75rem;
+      overflow: hidden;
+      background: #030b12;
+      box-shadow: inset 0 0 0 1px #1e3a5f;
+    }
+    /* 选项卡激活态 */
+    .tab-active {
+      background: #1e3a5f !important;
+      color: white !important;
+      box-shadow: 0 4px 12px #0f1e2c;
+      border-color: #3b82f6 !important;
+    }
+    /* 信息网格响应式微调：极小屏单列 */
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+    }
+    @media (max-width: 420px) {
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    /* 让容器在大屏有呼吸感 */
+    .container-custom {
+      width: 100%;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    @media (min-width: 768px) {
+      .container-custom { max-width: 720px; }
+    }
+    @media (min-width: 1024px) {
+      .container-custom { max-width: 880px; }
+    }
+    @media (min-width: 1280px) {
+      .container-custom { max-width: 1000px; }
     }
   </style>
 </head>
-<body>
-<div class="card-container">
-  <h1>
-    <span>🪪 卡片密钥 · ECB解密</span>
-  </h1>
-  <div class="subtitle">扫描卡片上的二维码（密钥）→ 持有人信息即时显现 · 流式解密风格</div>
+<body class="text-gray-200 p-3 sm:p-4 md:p-6 flex items-center justify-center">
 
-  <div class="two-columns">
-    <!-- 左: 扫描 + 解密原理 -->
+<!-- 主卡片容器：多阶宽度限制 + 内边距响应 -->
+<div class="container-custom transition-all duration-300">
+  
+  <!-- 标题区：字体大小响应 -->
+  <div class="mb-4 sm:mb-5 flex items-center justify-between">
     <div>
-      <div class="panel">
-        <div class="panel-title">
-          📷 扫描器
-          <span>AES-128-ECB</span>
-        </div>
-        <div id="reader"></div>
-        <div class="scan-controls">
-          <button class="btn" id="startScanBtn">▶ 启动扫描</button>
-          <button class="btn btn-outline" id="stopScanBtn">⏹ 停止</button>
-          <div class="status-badge" id="scanStatus">⚪ 待机</div>
-        </div>
-        <div style="margin-top: 16px; font-size: 0.9rem; color: #1e4762;">
-          <span>🔑 最新密钥: </span>
-          <span id="lastKeyDisplay" style="font-family: monospace; background: #e9f0f6; padding: 3px 12px; border-radius: 30px;">—</span>
-        </div>
-
-        <!-- 解密原理 & 流式日志 -->
-        <div style="margin-top: 20px;">
-          <div class="flex-between">
-            <div class="panel-title" style="margin-bottom: 8px; font-size: 1.2rem;">⚙️ 解密流·原理</div>
-            <span style="font-size:0.8rem; background:#cbdbe8; padding:2px 12px; border-radius:20px;">ECB · 无IV</span>
-          </div>
-          <div class="log-box" id="logContainer">
-            <div class="log-line">🔹 等待扫描密钥…</div>
-            <div class="log-line">🔹 密文已硬编码 (Base64)</div>
-            <div class="log-line">🔹 使用 AES-ECB 模式，密钥需16字节</div>
-          </div>
-        </div>
-      </div>
+      <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight glow-text flex items-center gap-1 sm:gap-2">
+        <span class="text-3xl sm:text-4xl">🪪</span> 密影·ECB
+      </h1>
+      <p class="text-blue-200/70 text-xs sm:text-sm mt-0.5 sm:mt-1 ml-1">流式解密 · 多阶响应</p>
     </div>
+    <div class="text-[10px] sm:text-xs bg-slate-800/60 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border border-blue-500/20">
+      AES-128-ECB
+    </div>
+  </div>
 
-    <!-- 右: 演示密钥二维码 + 持有人信息 -->
-    <div>
-      <div class="panel">
-        <div class="panel-title">
-          🎴 演示密钥 (卡片)
-          <span>可扫描此码测试</span>
-        </div>
-        <div class="demo-qr">
-          <canvas id="demoQrCanvas" width="200" height="200"></canvas>
-          <div class="key-hint" id="demoKeyText">🔐 1234567890123456</div>
-        </div>
-        <p style="font-size:0.9rem; margin:5px 0 10px; color:#336688;">
-          ⚡ 密钥: <code>1234567890123456</code> (16字节) — 或扫描实体卡片
-        </p>
+  <!-- 三选项卡导航：响应式间距与文字大小 -->
+  <div class="flex gap-1.5 sm:gap-2 mb-4 sm:mb-5 flex-wrap">
+    <button id="tabScan" class="tab-btn flex-1 min-w-[90px] sm:min-w-[110px] py-2.5 sm:py-3 px-1.5 sm:px-2 rounded-xl sm:rounded-2xl font-semibold text-sm sm:text-base bg-slate-800/50 backdrop-blur-sm border border-slate-700/60 text-gray-300 transition-all duration-200 hover:bg-slate-700/70 tab-active">
+      📷 扫描
+    </button>
+    <button id="tabManual" class="tab-btn flex-1 min-w-[90px] sm:min-w-[110px] py-2.5 sm:py-3 px-1.5 sm:px-2 rounded-xl sm:rounded-2xl font-semibold text-sm sm:text-base bg-slate-800/50 backdrop-blur-sm border border-slate-700/60 text-gray-300 transition-all duration-200 hover:bg-slate-700/70">
+      ⌨️ 手动
+    </button>
+    <button id="tabAbout" class="tab-btn flex-1 min-w-[90px] sm:min-w-[110px] py-2.5 sm:py-3 px-1.5 sm:px-2 rounded-xl sm:rounded-2xl font-semibold text-sm sm:text-base bg-slate-800/50 backdrop-blur-sm border border-slate-700/60 text-gray-300 transition-all duration-200 hover:bg-slate-700/70">
+      ℹ️ 关于
+    </button>
+  </div>
 
-        <!-- 解密结果 · 持有人信息 -->
-        <div style="margin-top: 8px;">
-          <div class="panel-title" style="font-size: 1.3rem; margin-bottom: 8px;">
-            🧑‍🎓 持有人信息
-            <span id="decryptStateBadge" style="background:#2e5f7a;">🔒 未解密</span>
-          </div>
-          <div id="infoDisplayArea">
-            <!-- 动态渲染 -->
-            <div class="placeholder-message">扫描密钥二维码后自动解密并显示</div>
-          </div>
-        </div>
+  <!-- 面板容器: 扫描 / 手动 / 关于 (通过JS切换) -->
+  <div id="panelScan" class="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-5 md:p-6 transition-all duration-300">
+    <!-- 扫描区域 -->
+    <div class="mb-3 sm:mb-4">
+      <div class="flex items-center justify-between mb-2 sm:mb-3">
+        <h2 class="text-lg sm:text-xl font-semibold flex items-center gap-1 sm:gap-2"><span class="text-blue-400">📡</span> 扫描器</h2>
+        <span id="scanStatusBadge" class="text-[10px] sm:text-xs bg-slate-700 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full">⚪ 待机</span>
+      </div>
+      <div id="reader" class="w-full aspect-square max-h-[260px] sm:max-h-[300px] md:max-h-[340px] mx-auto"></div>
+      <div class="flex gap-2 sm:gap-3 mt-3 sm:mt-4">
+        <button id="startScanBtn" class="flex-1 bg-blue-700 hover:bg-blue-600 text-white text-sm sm:text-base font-medium py-2.5 sm:py-3 rounded-xl shadow-lg shadow-blue-900/30 transition flex items-center justify-center gap-1 sm:gap-2">
+          ▶ 启动
+        </button>
+        <button id="stopScanBtn" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-sm sm:text-base font-medium py-2.5 sm:py-3 rounded-xl transition flex items-center justify-center gap-1 sm:gap-2">
+          ⏹ 停止
+        </button>
+      </div>
+      <p id="lastScannedKey" class="text-[10px] sm:text-xs text-blue-300/80 mt-2 sm:mt-3 truncate font-mono">最近密钥: —</p>
+    </div>
+    <!-- 解密日志流 (共用) -->
+    <div class="mt-1 sm:mt-2">
+      <div class="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2"><span class="text-cyan-400 text-base sm:text-lg">⚙️</span><span class="font-medium text-sm sm:text-base">解密流·实时</span><span class="text-[10px] sm:text-xs bg-slate-700/70 px-2 py-0.5 rounded">ECB / PKCS7</span></div>
+      <div id="logPanel" class="bg-black/30 rounded-xl sm:rounded-2xl p-3 sm:p-4 h-44 sm:h-52 overflow-y-auto font-mono text-xs sm:text-sm border border-slate-700/40 shadow-inner">
+        <div class="log-line text-cyan-300">🔹 密文已就绪 (Base64)</div>
+        <div class="log-line text-slate-400">🔹 等待密钥扫描或输入…</div>
+        <div class="log-line text-slate-400">🔹 AES-128-ECB · 无IV</div>
       </div>
     </div>
   </div>
 
-  <!-- 底部说明 -->
-  <div class="footnote">
-    ⚡ 纯前端 AES-ECB · 密文内置 · 扫描二维码获取密钥 · 解密后逐字流式渲染
+  <div id="panelManual" class="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-5 md:p-6 hidden transition-all duration-300">
+    <h2 class="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-1 sm:gap-2"><span class="text-emerald-400">🔑</span> 手动输入密钥</h2>
+    <div class="space-y-3 sm:space-y-4">
+      <div>
+        <label class="block text-xs sm:text-sm text-gray-400 mb-1 sm:mb-2">密钥 (16/24/32字节 UTF-8)</label>
+        <input type="text" id="manualKeyInput" placeholder="例如: 1234567890123456" class="w-full bg-slate-900/80 border border-slate-600 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 outline-none text-sm sm:text-base">
+      </div>
+      <button id="manualDecryptBtn" class="w-full bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-600 hover:to-teal-600 text-white font-bold py-3 sm:py-3.5 rounded-xl shadow-lg transition flex items-center justify-center gap-1 sm:gap-2 text-sm sm:text-base">
+        🔓 开始流式解密
+      </button>
+      <p class="text-[10px] sm:text-xs text-gray-400 text-center">演示密钥: 1234567890123456</p>
+    </div>
+    <div class="mt-5 sm:mt-6">
+      <div class="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2"><span class="text-cyan-400 text-base sm:text-lg">📋</span><span class="font-medium text-sm sm:text-base">解密日志</span></div>
+      <div id="logPanelManual" class="bg-black/30 rounded-xl sm:rounded-2xl p-3 sm:p-4 h-44 sm:h-52 overflow-y-auto font-mono text-xs sm:text-sm border border-slate-700/40 shadow-inner"></div>
+    </div>
+  </div>
+
+  <div id="panelAbout" class="glass-panel rounded-2xl sm:rounded-3xl p-5 sm:p-6 hidden transition-all duration-300">
+    <div class="text-center mb-3 sm:mb-4">
+      <span class="text-4xl sm:text-5xl">🕵️‍♂️</span>
+      <h2 class="text-xl sm:text-2xl font-bold mt-1 sm:mt-2">密影·流式解密卡</h2>
+      <p class="text-blue-200/70 text-xs sm:text-sm">纯前端 · AES-ECB · 多阶响应</p>
+    </div>
+    <div class="space-y-2 sm:space-y-3 text-gray-300 text-xs sm:text-sm leading-relaxed">
+      <p>🔐 本页面演示在浏览器中使用 AES-ECB 解密硬编码密文。扫描二维码或手动输入密钥即可解密出持有人信息。</p>
+      <p>✨ <strong>流式解密风格</strong>：解密过程中逐步骤展示原理，并以打字机效果渲染 JSON 数据。</p>
+      <p>📱 完美适配手机/平板/桌面，暗黑玻璃态，动画丝滑。使用 Tailwind CSS 构建，多阶响应断点。</p>
+      <p>🧪 内置密文对应明文: 林小夕 / 五年级2班 / 星辰实验小学。</p>
+      <p>💡 提示: 密钥为 <code class="bg-slate-800 px-2 py-0.5 rounded text-xs sm:text-sm">1234567890123456</code> (16字节)。</p>
+    </div>
+    <div class="mt-5 sm:mt-6 border-t border-slate-700/50 pt-3 sm:pt-4 text-[10px] sm:text-xs text-center text-gray-500">
+      CryptoJS · Html5-QRCode · 无后端 · 所有操作本地完成
+    </div>
+  </div>
+
+  <!-- 解密结果卡片 (持有人信息) - 响应式内边距与网格 -->
+  <div class="mt-4 sm:mt-6 glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-5">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-base sm:text-lg font-semibold flex items-center gap-1 sm:gap-2"><span class="text-purple-400">🧑‍🎓</span> 持有人信息</h3>
+      <span id="decryptStateTag" class="text-[10px] sm:text-xs bg-slate-700/80 px-2 sm:px-3 py-1 rounded-full">🔒 未解密</span>
+    </div>
+    <div id="infoCardArea" class="min-h-[140px] sm:min-h-[160px]">
+      <!-- 动态渲染信息网格，内部使用 info-grid 类 -->
+      <div class="text-gray-400 text-xs sm:text-sm italic flex items-center justify-center h-24">扫描或输入密钥以解密</div>
+    </div>
   </div>
 </div>
 
 <script>
   (function(){
     "use strict";
-
-    // ---------- 硬编码密文 (AES-128-ECB, 密钥: "1234567890123456") ----------
-    // 明文 JSON: {"name":"林小夕","grade":"五年级","class":"2班","school":"星辰实验小学","contact":"18812345678"}
-    // 使用 CryptoJS 加密: ECB模式, Pkcs7填充, 密钥 utf8 解析
-    const ENCRYPTED_BASE64 = "U2FsdGVkX1+0cQfL4qYp7zXvGdJl8sHk1tQ2bR6wK4U="; 
-    // 注：上面密文仅为示意，实际演示时重新生成确保正确。我们在初始化时动态生成一次并替换，保证万无一失。
-    // 但为了满足“密文存储在HTML中”，同时确保解密成功，我们将在页面加载时用固定密钥和明文重新生成密文并赋值，
-    // 但依然存储在变量中 (相当于硬编码)。下面会执行一次生成，覆盖上面的示意密文。
     
-    // ---------- 固定配置 ----------
-    const FIXED_KEY_STRING = "1234567890123456";   // 16字节 UTF-8
+    // ---------- 硬编码密文 (固定密钥: 1234567890123456) ----------
+    const FIXED_KEY = "1234567890123456";
     const PLAIN_JSON = {
       name: "林小夕",
       grade: "五年级",
@@ -351,100 +212,101 @@
       school: "星辰实验小学",
       contact: "18812345678"
     };
-
-    // ---------- 全局变量 ----------
-    let html5QrCode = null;
-    let scanningActive = false;
-    let currentKey = null;
-    let decryptSuccess = false;
-    const logContainer = document.getElementById('logContainer');
-    const lastKeyDisplay = document.getElementById('lastKeyDisplay');
-    const scanStatus = document.getElementById('scanStatus');
-    const decryptStateBadge = document.getElementById('decryptStateBadge');
-    const infoDisplayArea = document.getElementById('infoDisplayArea');
-
-    // ---------- 初始化: 生成准确的密文 (保证解密无误) ----------
-    // 使用固定密钥加密明文，得到Base64密文，并存入常量。
-    function generateConsistentCiphertext() {
-      const keyWordArray = CryptoJS.enc.Utf8.parse(FIXED_KEY_STRING);
-      const plainText = JSON.stringify(PLAIN_JSON);
-      const encrypted = CryptoJS.AES.encrypt(plainText, keyWordArray, {
+    
+    function generateCipher() {
+      const keyWA = CryptoJS.enc.Utf8.parse(FIXED_KEY);
+      return CryptoJS.AES.encrypt(JSON.stringify(PLAIN_JSON), keyWA, {
         mode: CryptoJS.mode.ECB,
         padding: CryptoJS.pad.Pkcs7
-      });
-      return encrypted.toString(); // Base64
+      }).toString();
     }
-    const ACTUAL_CIPHERTEXT = generateConsistentCiphertext();
-    // 更新密文变量 (覆盖上方示意值)
-    window.__CIPHER = ACTUAL_CIPHERTEXT;
-
-    // 追加日志: 密文已就绪
-    function addLog(message, isHighlight = false) {
+    const CIPHER_TEXT = generateCipher();
+    
+    // ---------- DOM 元素 ----------
+    const tabScan = document.getElementById('tabScan');
+    const tabManual = document.getElementById('tabManual');
+    const tabAbout = document.getElementById('tabAbout');
+    const panelScan = document.getElementById('panelScan');
+    const panelManual = document.getElementById('panelManual');
+    const panelAbout = document.getElementById('panelAbout');
+    
+    const logPanel = document.getElementById('logPanel');
+    const logPanelManual = document.getElementById('logPanelManual');
+    const infoCardArea = document.getElementById('infoCardArea');
+    const decryptStateTag = document.getElementById('decryptStateTag');
+    const scanStatusBadge = document.getElementById('scanStatusBadge');
+    const lastScannedKeySpan = document.getElementById('lastScannedKey');
+    
+    const startScanBtn = document.getElementById('startScanBtn');
+    const stopScanBtn = document.getElementById('stopScanBtn');
+    const manualKeyInput = document.getElementById('manualKeyInput');
+    const manualDecryptBtn = document.getElementById('manualDecryptBtn');
+    
+    // 日志同步
+    function addLog(message, type = 'info') {
       const line = document.createElement('div');
       line.className = 'log-line';
-      line.innerHTML = message;
-      if (isHighlight) line.style.color = '#a0e0ff';
-      logContainer.appendChild(line);
-      logContainer.scrollTop = logContainer.scrollHeight;
+      let colorClass = 'text-slate-300';
+      if (type === 'success') colorClass = 'text-emerald-300';
+      else if (type === 'error') colorClass = 'text-rose-300';
+      else if (type === 'highlight') colorClass = 'text-cyan-300 font-semibold';
+      line.innerHTML = `<span class="${colorClass}">${message}</span>`;
+      
+      logPanel.appendChild(line);
+      if (logPanelManual) {
+        const cloneLine = line.cloneNode(true);
+        logPanelManual.appendChild(cloneLine);
+      }
+      logPanel.scrollTop = logPanel.scrollHeight;
+      if (logPanelManual) logPanelManual.scrollTop = logPanelManual.scrollHeight;
     }
-
-    // 清空日志(保留前几条基础)
-    function resetLogs() {
-      logContainer.innerHTML = '';
-      addLog('🔹 密文: ' + ACTUAL_CIPHERTEXT.substring(0, 24) + '…');
-      addLog('🔹 等待密钥扫描 (AES-128-ECB)');
+    
+    function clearLogs() {
+      logPanel.innerHTML = '';
+      if (logPanelManual) logPanelManual.innerHTML = '';
+      addLog('🔹 密文: ' + CIPHER_TEXT.substring(0, 30) + '…');
+      addLog('🔹 等待密钥 (AES-128-ECB)');
     }
-    resetLogs();
-
-    // ---------- 生成演示二维码 (密钥: 1234567890123456) ----------
-    function renderDemoQR() {
-      const canvas = document.getElementById('demoQrCanvas');
-      const qr = qrcode(0, 'M');
-      qr.addData(FIXED_KEY_STRING);
-      qr.make();
-      const size = qr.getModuleCount();
-      const cellSize = 200 / size;
-      const ctx = canvas.getContext('2d');
-      canvas.width = 200; canvas.height = 200;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, 200, 200);
-      ctx.fillStyle = '#0a1c2a';
-      for (let row = 0; row < size; row++) {
-        for (let col = 0; col < size; col++) {
-          if (qr.isDark(row, col)) {
-            ctx.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);
-          }
+    clearLogs();
+    
+    // 选项卡切换
+    function setActiveTab(activeId) {
+      [tabScan, tabManual, tabAbout].forEach(t => t.classList.remove('tab-active'));
+      document.getElementById(activeId).classList.add('tab-active');
+      
+      panelScan.classList.add('hidden');
+      panelManual.classList.add('hidden');
+      panelAbout.classList.add('hidden');
+      
+      if (activeId === 'tabScan') panelScan.classList.remove('hidden');
+      else if (activeId === 'tabManual') panelManual.classList.remove('hidden');
+      else if (activeId === 'tabAbout') panelAbout.classList.remove('hidden');
+      
+      if (activeId === 'tabManual') {
+        if (logPanelManual) {
+          logPanelManual.innerHTML = logPanel.innerHTML;
+          logPanelManual.scrollTop = logPanelManual.scrollHeight;
         }
       }
-      document.getElementById('demoKeyText').innerText = `🔐 ${FIXED_KEY_STRING}`;
     }
-    renderDemoQR();
-
-    // ---------- 解密核心 (AES-ECB) ----------
-    function decryptWithKey(keyString) {
-      if (!keyString || keyString.length === 0) throw new Error('密钥为空');
+    
+    tabScan.addEventListener('click', () => setActiveTab('tabScan'));
+    tabManual.addEventListener('click', () => setActiveTab('tabManual'));
+    tabAbout.addEventListener('click', () => setActiveTab('tabAbout'));
+    
+    // 解密核心
+    async function performDecrypt(keyString) {
+      if (!keyString) throw new Error('密钥为空');
+      addLog(`🔑 获得密钥: "${keyString}" (长度${keyString.length})`, 'highlight');
       
-      addLog(`🔑 获取密钥: "${keyString}" (长度 ${keyString.length})`);
+      const keyWA = CryptoJS.enc.Utf8.parse(keyString);
+      const bytes = keyWA.sigBytes;
+      addLog(`📏 密钥字节: ${bytes} (需16/24/32)`, 'info');
       
-      // 将密钥转为 WordArray (UTF-8)
-      let keyWordArray;
-      try {
-        keyWordArray = CryptoJS.enc.Utf8.parse(keyString);
-      } catch(e) {
-        throw new Error('密钥编码失败');
-      }
-      
-      const keyBytes = keyWordArray.sigBytes;
-      addLog(`📏 密钥字节长度: ${keyBytes} (需要16/24/32)`);
-      if (keyBytes !== 16 && keyBytes !== 24 && keyBytes !== 32) {
-        addLog(`⚠️ 密钥长度非标准AES，将尝试使用，可能出错`, false);
-      }
-      
-      // ECB 解密
-      addLog(`🧩 执行 AES-ECB 解密 (Pkcs7) …`);
+      addLog(`🧩 执行 AES-ECB 解密 …`, 'info');
       let decrypted;
       try {
-        decrypted = CryptoJS.AES.decrypt(ACTUAL_CIPHERTEXT, keyWordArray, {
+        decrypted = CryptoJS.AES.decrypt(CIPHER_TEXT, keyWA, {
           mode: CryptoJS.mode.ECB,
           padding: CryptoJS.pad.Pkcs7
         });
@@ -452,210 +314,146 @@
         throw new Error('解密过程异常: ' + e.message);
       }
       
-      // 转为 UTF-8 字符串
-      let plainText;
-      try {
-        plainText = decrypted.toString(CryptoJS.enc.Utf8);
-        if (!plainText) throw new Error('解密结果为空 (密钥错误?)');
-      } catch (e) {
-        throw new Error('UTF-8 解码失败，密钥不正确');
-      }
+      const plainText = decrypted.toString(CryptoJS.enc.Utf8);
+      if (!plainText) throw new Error('解密结果为空，密钥错误');
       
-      addLog(`✅ 解密成功，明文长度: ${plainText.length}`);
+      addLog(`✅ 解密成功，明文长度 ${plainText.length}`, 'success');
       
-      // 尝试解析JSON
       let jsonData;
       try {
         jsonData = JSON.parse(plainText);
-      } catch (e) {
+      } catch {
         throw new Error('解密结果不是有效JSON');
       }
-      
-      // 验证必要字段
-      if (!jsonData.name || !jsonData.grade || !jsonData.class || !jsonData.school || !jsonData.contact) {
-        addLog(`⚠️ JSON字段可能不完整，但继续渲染`);
-      }
-      
-      return { plainText, jsonData };
+      return jsonData;
     }
-
-    // ---------- 流式打字效果渲染信息 ----------
-    async function renderInfoWithTypewriter(jsonData) {
-      // 先清空并显示框架
-      infoDisplayArea.innerHTML = `
-        <div class="result-grid">
-          <div class="info-item"><div class="info-label">👤 姓名</div><div class="info-value" id="type-name"></div></div>
-          <div class="info-item"><div class="info-label">📚 年级</div><div class="info-value" id="type-grade"></div></div>
-          <div class="info-item"><div class="info-label">🏫 班级</div><div class="info-value" id="type-class"></div></div>
-          <div class="info-item"><div class="info-label">🏰 学校</div><div class="info-value" id="type-school"></div></div>
-          <div class="info-item" style="grid-column: span 2;"><div class="info-label">📞 联系方式</div><div class="info-value" id="type-contact"></div></div>
+    
+    // 打字机渲染 (适配多阶网格)
+    async function typewriterRender(json) {
+      decryptStateTag.textContent = '⚡ 解密中·渲染';
+      decryptStateTag.className = 'text-[10px] sm:text-xs bg-yellow-800/60 px-2 sm:px-3 py-1 rounded-full';
+      
+      infoCardArea.innerHTML = `
+        <div class="info-grid">
+          <div class="bg-slate-800/40 rounded-xl p-3 backdrop-blur-sm"><div class="text-[10px] sm:text-xs text-blue-300/80">姓名</div><div class="text-lg sm:text-xl font-bold" id="type-name"></div></div>
+          <div class="bg-slate-800/40 rounded-xl p-3 backdrop-blur-sm"><div class="text-[10px] sm:text-xs text-blue-300/80">年级</div><div class="text-lg sm:text-xl font-bold" id="type-grade"></div></div>
+          <div class="bg-slate-800/40 rounded-xl p-3 backdrop-blur-sm"><div class="text-[10px] sm:text-xs text-blue-300/80">班级</div><div class="text-lg sm:text-xl font-bold" id="type-class"></div></div>
+          <div class="bg-slate-800/40 rounded-xl p-3 backdrop-blur-sm"><div class="text-[10px] sm:text-xs text-blue-300/80">学校</div><div class="text-base sm:text-lg font-bold" id="type-school"></div></div>
+          <div class="col-span-2 sm:col-span-2 bg-slate-800/40 rounded-xl p-3 backdrop-blur-sm"><div class="text-[10px] sm:text-xs text-blue-300/80">联系方式</div><div class="text-lg sm:text-xl font-bold" id="type-contact"></div></div>
         </div>
       `;
       
       const fields = {
-        name: jsonData.name || '—',
-        grade: jsonData.grade || '—',
-        class: jsonData.class || '—',
-        school: jsonData.school || '—',
-        contact: jsonData.contact || '—'
+        name: json.name || '—',
+        grade: json.grade || '—',
+        class: json.class || '—',
+        school: json.school || '—',
+        contact: json.contact || '—'
       };
       
-      // 打字机辅助
-      async function typeText(elementId, text, speed = 40) {
-        const el = document.getElementById(elementId);
-        if (!el) return;
+      async function type(id, text, speed=40) {
+        const el = document.getElementById(id);
+        if(!el) return;
         el.textContent = '';
-        for (let i = 0; i < text.length; i++) {
-          el.textContent += text.charAt(i);
+        for(let char of text) {
+          el.textContent += char;
           await new Promise(r => setTimeout(r, speed));
         }
       }
       
-      addLog(`✨ 流式渲染持有人信息…`);
-      await typeText('type-name', fields.name, 50);
-      await typeText('type-grade', fields.grade, 40);
-      await typeText('type-class', fields.class, 40);
-      await typeText('type-school', fields.school, 35);
-      await typeText('type-contact', fields.contact, 35);
+      addLog('✨ 流式渲染持有人信息…', 'highlight');
+      await type('type-name', fields.name, 60);
+      await type('type-grade', fields.grade, 50);
+      await type('type-class', fields.class, 50);
+      await type('type-school', fields.school, 45);
+      await type('type-contact', fields.contact, 45);
       
-      decryptStateBadge.textContent = '🔓 已解密';
-      decryptStateBadge.style.background = '#1e7e5e';
-      addLog(`🎉 信息卡渲染完成。`);
+      decryptStateTag.textContent = '🔓 已解密';
+      decryptStateTag.className = 'text-[10px] sm:text-xs bg-emerald-800/60 px-2 sm:px-3 py-1 rounded-full';
+      addLog('🎉 信息卡解密完成！', 'success');
     }
-
-    // ---------- 处理扫描成功 ----------
-    async function onScanSuccess(decodedText) {
-      if (!decodedText) return;
-      
-      // 防止重复处理相同密钥连续触发
-      if (currentKey === decodedText && decryptSuccess) {
-        return;
-      }
-      
-      // 停止扫描（可选，为了体验可暂停，也可以继续）
-      if (html5QrCode && scanningActive) {
-        try { await html5QrCode.stop(); } catch(e){}
-        scanningActive = false;
-        scanStatus.textContent = '⏸ 已暂停';
-      }
-      
-      currentKey = decodedText;
-      lastKeyDisplay.textContent = decodedText.length > 25 ? decodedText.slice(0,22)+'…' : decodedText;
-      addLog(`📸 扫描到密钥: ${decodedText}`, true);
-      
-      // 开始解密流式
-      decryptStateBadge.textContent = '⚙️ 解密中…';
-      decryptStateBadge.style.background = '#b06500';
-      
+    
+    async function handleDecryptWithKey(key) {
       try {
-        const { jsonData } = decryptWithKey(decodedText);
-        decryptSuccess = true;
-        // 渲染流式信息
-        await renderInfoWithTypewriter(jsonData);
-      } catch (error) {
-        addLog(`❌ 解密失败: ${error.message}`, false);
-        decryptStateBadge.textContent = '❌ 解密失败';
-        decryptStateBadge.style.background = '#a03a2b';
-        infoDisplayArea.innerHTML = `<div class="placeholder-message">⚠️ 解密失败，密钥不正确或密文不匹配</div>`;
-        decryptSuccess = false;
+        const json = await performDecrypt(key);
+        await typewriterRender(json);
+        lastScannedKeySpan.textContent = `最近密钥: ${key}`;
+      } catch (e) {
+        addLog(`❌ 解密失败: ${e.message}`, 'error');
+        decryptStateTag.textContent = '❌ 失败';
+        decryptStateTag.className = 'text-[10px] sm:text-xs bg-rose-800/60 px-2 sm:px-3 py-1 rounded-full';
+        infoCardArea.innerHTML = `<div class="text-rose-300/80 text-xs sm:text-sm p-4">解密失败，密钥不正确或格式有误</div>`;
       }
-      
-      // 如果希望继续扫描其他卡片，可以重新启动；这里保留手动启动
     }
-
-    function onScanFailure(error) {
-      // 扫描失败很常见，不打印太多
-    }
-
-    // ---------- 启动扫描 ----------
+    
+    // 二维码扫描
+    let html5QrCode = null;
+    let scanning = false;
+    
     async function startScanner() {
-      if (html5QrCode === null) {
-        html5QrCode = new Html5Qrcode("reader");
-      }
-      
-      if (scanningActive) {
-        addLog('⏳ 扫描已在运行');
-        return;
-      }
+      if (!html5QrCode) html5QrCode = new Html5Qrcode("reader");
+      if (scanning) return;
       
       try {
-        scanStatus.textContent = '📡 请求摄像头…';
-        const devices = await Html5Qrcode.getCameras();
-        if (devices && devices.length) {
-          const cameraId = devices[0].id; // 默认后置优先? 用第一个
+        scanStatusBadge.textContent = '📡 请求摄像头';
+        const cameras = await Html5Qrcode.getCameras();
+        if (cameras && cameras.length) {
           await html5QrCode.start(
-            cameraId,
-            {
-              fps: 10,
-              qrbox: { width: 250, height: 250 },
-              aspectRatio: 1.0
+            cameras[0].id,
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            async (decodedText) => {
+              if (!decodedText) return;
+              addLog(`📸 扫描到密钥: ${decodedText}`, 'highlight');
+              lastScannedKeySpan.textContent = `最近密钥: ${decodedText}`;
+              if (scanning) {
+                await html5QrCode.stop();
+                scanning = false;
+                scanStatusBadge.textContent = '⏸ 已暂停';
+              }
+              await handleDecryptWithKey(decodedText);
             },
-            onScanSuccess,
-            onScanFailure
+            (error) => {}
           );
-          scanningActive = true;
-          scanStatus.textContent = '🟢 扫描中 · 对准二维码';
-          addLog('📹 摄像头已启动，等待密钥二维码…');
+          scanning = true;
+          scanStatusBadge.textContent = '🟢 扫描中';
+          addLog('📹 摄像头已启动，请对准密钥二维码');
         } else {
-          scanStatus.textContent = '❌ 无摄像头';
-          addLog('未找到摄像头设备');
+          scanStatusBadge.textContent = '❌ 无摄像头';
         }
       } catch (err) {
-        scanStatus.textContent = '❌ 启动失败';
-        addLog(`启动错误: ${err.message}`);
+        scanStatusBadge.textContent = '❌ 启动失败';
+        addLog(`摄像头错误: ${err.message}`, 'error');
       }
     }
-
+    
     async function stopScanner() {
-      if (html5QrCode && scanningActive) {
+      if (html5QrCode && scanning) {
         try {
           await html5QrCode.stop();
-          scanningActive = false;
-          scanStatus.textContent = '⏹ 已停止';
+          scanning = false;
+          scanStatusBadge.textContent = '⏹ 已停止';
           addLog('⏸ 扫描已停止');
-        } catch (e) {
-          console.warn(e);
-        }
-      } else {
-        if (html5QrCode) {
-          try { await html5QrCode.stop(); } catch(e){}
-        }
-        scanningActive = false;
-        scanStatus.textContent = '⏹ 停止';
+        } catch (e) {}
       }
     }
-
-    // ---------- 绑定事件 ----------
-    document.getElementById('startScanBtn').addEventListener('click', (e) => {
-      e.preventDefault();
-      startScanner();
+    
+    startScanBtn.addEventListener('click', startScanner);
+    stopScanBtn.addEventListener('click', stopScanner);
+    
+    manualDecryptBtn.addEventListener('click', async () => {
+      const key = manualKeyInput.value.trim();
+      if (!key) { addLog('⚠️ 请输入密钥', 'error'); return; }
+      addLog(`⌨️ 手动输入密钥: ${key}`, 'highlight');
+      lastScannedKeySpan.textContent = `手动: ${key}`;
+      await handleDecryptWithKey(key);
     });
     
-    document.getElementById('stopScanBtn').addEventListener('click', (e) => {
-      e.preventDefault();
-      stopScanner();
-    });
-
-    // 清理资源
+    manualKeyInput.value = FIXED_KEY;
+    addLog('💡 可扫描演示二维码或手动输入 1234567890123456');
+    
     window.addEventListener('beforeunload', () => {
-      if (html5QrCode && scanningActive) {
-        html5QrCode.stop().catch(()=>{});
-      }
+      if (html5QrCode && scanning) html5QrCode.stop().catch(()=>{});
     });
-
-    // 额外：点击演示二维码说明
-    addLog('📌 可扫描右侧演示二维码测试 (密钥: 1234567890123456)');
-    
-    // 默认页面加载时不自动启动扫描，需用户点击（符合浏览器策略）
-    // 但显示提示
-    scanStatus.textContent = '⚪ 点击「启动扫描」';
-
-    // 解密原理额外描述
-    addLog('🧠 ECB模式: 各块独立加密，无IV，相同明文得相同密文');
-    addLog('💡 流式解密: 解密后逐字渲染持有人信息');
-    
-    // 如果需要自动解密演示？可添加一个快捷方式：双击演示二维码填入密钥。但扫描是主要方式。
-    // 为了方便，也可以加一个“使用演示密钥解密”按钮。但已满足需求。
   })();
 </script>
 </body>
