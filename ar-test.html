@@ -8,7 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- 加密库 (稳定CDN) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-  <!-- ✅ 修复：使用 jsdelivr CDN 替代失效的 unpkg 链接 -->
+  <!-- ✅ 修复：使用 jsdelivr CDN (稳定) -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -34,15 +34,23 @@
     @media (min-width: 640px) {
       .log-line { font-size: 0.85rem; }
     }
-    #reader video {
-      border-radius: 1.5rem !important;
-      object-fit: cover;
-    }
     #reader {
       border-radius: 1.75rem;
       overflow: hidden;
       background: #030b12;
       min-height: 200px;
+      position: relative;
+    }
+    /* 确保视频全屏覆盖，移除任何遮罩干扰 */
+    #reader video {
+      border-radius: 1.5rem !important;
+      object-fit: cover;
+      width: 100% !important;
+      height: 100% !important;
+    }
+    /* 隐藏默认的扫描框遮罩 (qr-shaded-region) */
+    #qr-shaded-region {
+      display: none !important;
     }
     .info-grid {
       display: grid;
@@ -86,7 +94,7 @@
           <span class="text-4xl sm:text-5xl">📷</span>
           <div>
             <h2 class="text-2xl font-semibold">扫描密钥</h2>
-            <p class="text-gray-400 text-sm">使用摄像头扫描二维码获取密钥</p>
+            <p class="text-gray-400 text-sm">使用后置摄像头扫描二维码</p>
           </div>
         </div>
       </div>
@@ -210,7 +218,7 @@
       <div class="space-y-3 text-gray-300 text-sm leading-relaxed">
         <p>🔐 本页面演示在浏览器中使用 AES-ECB 解密硬编码密文。扫描二维码或手动输入密钥即可解密出持有人信息。</p>
         <p>✨ <strong>流式解密风格</strong>：解密过程中逐步骤展示原理，并以打字机效果渲染 JSON 数据。</p>
-        <p>📱 完美适配手机/平板/桌面，暗黑玻璃态。扫描模块已修复资源占用问题并更换稳定CDN。</p>
+        <p>📱 完美适配手机/平板/桌面，暗黑玻璃态。现已默认使用后置摄像头，全屏无遮罩扫描。</p>
         <p>🧪 内置密文对应明文: 林小夕 / 五年级2班 / 星辰实验小学。</p>
         <p>💡 提示: 密钥为 <code class="bg-slate-800 px-2 py-0.5 rounded">1234567890123456</code> (16字节)。</p>
       </div>
@@ -255,7 +263,7 @@
     let scanning = false;
     const scanStatusBadge = document.getElementById('scanStatusBadge');
     
-    // 释放扫描器资源 (停止 + 置空)
+    // 释放扫描器资源
     async function releaseScanner(keepStatusText = false) {
       if (html5QrCode) {
         try {
@@ -263,9 +271,7 @@
             await html5QrCode.stop();
             scanning = false;
           }
-        } catch (e) {
-          // 忽略停止时的错误
-        } finally {
+        } catch (e) {} finally {
           html5QrCode = null;
         }
       }
@@ -276,33 +282,24 @@
     }
     
     function showPage(pageId) {
-      // 如果离开扫描页面，立刻释放摄像头资源
       if (pageId !== 'scan') {
-        releaseScanner().then(() => {});
+        releaseScanner();
       }
-      
       Object.values(pages).forEach(p => p.classList.remove('active'));
       pages[pageId].classList.add('active');
-      
-      if (pageId === 'scan') {
-        if (!html5QrCode) {
-          scanStatusBadge.textContent = '⚪ 待机';
-        }
+      if (pageId === 'scan' && !html5QrCode) {
+        scanStatusBadge.textContent = '⚪ 待机';
       }
     }
     
-    // 返回按钮监听 (事件委托)
     document.addEventListener('click', (e) => {
       const backBtn = e.target.closest('[data-back]');
       if (backBtn) {
         const target = backBtn.getAttribute('data-back');
-        if (target === 'home') {
-          showPage('home');
-        }
+        if (target === 'home') showPage('home');
       }
     });
     
-    // 主页卡片跳转
     document.getElementById('goToScan').addEventListener('click', () => showPage('scan'));
     document.getElementById('goToManual').addEventListener('click', () => showPage('manual'));
     document.getElementById('goToAbout').addEventListener('click', () => showPage('about'));
@@ -343,7 +340,6 @@
       return jsonData;
     }
     
-    // 日志辅助
     function addLogToPanel(panel, message, type = 'info') {
       const line = document.createElement('div');
       line.className = 'log-line';
@@ -362,7 +358,6 @@
       addLogToPanel(panel, '🔹 等待密钥 (AES-128-ECB)');
     }
     
-    // 打字机渲染
     async function typewriterRender(json, decryptStateTag, infoCardArea) {
       if (window._typewriterActive) return;
       window._typewriterActive = true;
@@ -417,7 +412,7 @@
       window._typewriterActive = false;
     }
     
-    // ---------- 扫描页面逻辑 (修复CDN并增强健壮性) ----------
+    // ---------- 扫描页面逻辑 (后置摄像头 + 全屏无遮罩) ----------
     const startScanBtn = document.getElementById('startScanBtn');
     const stopScanBtn = document.getElementById('stopScanBtn');
     const lastScannedKeySpan = document.getElementById('lastScannedKey');
@@ -428,60 +423,60 @@
     clearLogPanel(logPanelScan);
     addLogToPanel(logPanelScan, '💡 可扫描演示二维码或手动输入 1234567890123456');
     
-    // 检查库是否加载成功
-    function isHtml5QrcodeAvailable() {
-      return typeof Html5Qrcode !== 'undefined';
-    }
-    
     async function stopScanner(manual = true) {
       if (html5QrCode) {
         try {
-          if (scanning) {
-            await html5QrCode.stop();
-            scanning = false;
-          }
+          if (scanning) await html5QrCode.stop();
         } catch (e) {}
         html5QrCode = null;
       }
       scanning = false;
       scanStatusBadge.textContent = '⏹ 已停止';
-      if (manual) {
-        addLogToPanel(logPanelScan, '⏸ 扫描已手动停止');
-      }
+      if (manual) addLogToPanel(logPanelScan, '⏸ 扫描已手动停止');
     }
     
     async function startScanner() {
-      // 检查库是否可用
-      if (!isHtml5QrcodeAvailable()) {
-        addLogToPanel(logPanelScan, '❌ 二维码库加载失败，请检查网络或刷新', 'error');
+      await releaseScanner(true);
+      
+      if (typeof Html5Qrcode === 'undefined') {
+        addLogToPanel(logPanelScan, '❌ 二维码库加载失败，请刷新', 'error');
         scanStatusBadge.textContent = '❌ 库加载失败';
         return;
       }
       
-      await releaseScanner(true);
-      
       try {
-        scanStatusBadge.textContent = '📡 请求摄像头';
+        scanStatusBadge.textContent = '📡 请求后置摄像头';
+        // 优先使用后置摄像头 (facingMode: "environment")
         const cameras = await Html5Qrcode.getCameras();
-        if (!cameras || cameras.length === 0) {
-          scanStatusBadge.textContent = '❌ 无摄像头';
-          addLogToPanel(logPanelScan, '❌ 未检测到摄像头设备', 'error');
-          return;
+        let selectedCameraId = null;
+        if (cameras && cameras.length) {
+          // 优先选择 label 中包含 "back" 或 "后置" 的设备
+          const backCamera = cameras.find(cam => 
+            cam.label.toLowerCase().includes('back') || 
+            cam.label.includes('后置') ||
+            cam.label.toLowerCase().includes('environment')
+          );
+          selectedCameraId = backCamera ? backCamera.id : cameras[0].id;
         }
         
         html5QrCode = new Html5Qrcode("reader");
         
-        const config = { 
-          fps: 10, 
+        // 全屏扫描：qrbox 设置为整个视口尺寸，消除遮罩
+        const config = {
+          fps: 10,
           qrbox: (viewfinderWidth, viewfinderHeight) => {
-            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-            const boxSize = Math.min(250, minEdge * 0.7);
-            return { width: boxSize, height: boxSize };
+            // 返回全屏尺寸，移除扫描框限制
+            return { width: viewfinderWidth, height: viewfinderHeight };
+          },
+          aspectRatio: 1.0,
+          // 明确指定后置摄像头
+          videoConstraints: {
+            facingMode: "environment"
           }
         };
         
         await html5QrCode.start(
-          cameras[0].id,
+          selectedCameraId || { facingMode: "environment" },
           config,
           async (decodedText) => {
             if (!decodedText) return;
@@ -510,8 +505,8 @@
         );
         
         scanning = true;
-        scanStatusBadge.textContent = '🟢 扫描中';
-        addLogToPanel(logPanelScan, '📹 摄像头已启动，请对准二维码');
+        scanStatusBadge.textContent = '🟢 扫描中 (后置)';
+        addLogToPanel(logPanelScan, '📹 后置摄像头已启动，全屏扫描中');
         
       } catch (err) {
         scanStatusBadge.textContent = '❌ 启动失败';
@@ -521,14 +516,10 @@
     }
     
     startScanBtn.addEventListener('click', () => {
-      startScanner().catch(e => {
-        addLogToPanel(logPanelScan, `启动异常: ${e.message}`, 'error');
-      });
+      startScanner().catch(e => addLogToPanel(logPanelScan, `启动异常: ${e.message}`, 'error'));
     });
     
-    stopScanBtn.addEventListener('click', () => {
-      stopScanner(true).catch(e => {});
-    });
+    stopScanBtn.addEventListener('click', () => stopScanner(true));
     
     // ---------- 手动页面逻辑 ----------
     const manualKeyInput = document.getElementById('manualKeyInput');
@@ -569,7 +560,6 @@
       }
     });
     
-    // 页面卸载清理
     window.addEventListener('beforeunload', () => {
       if (html5QrCode) {
         if (scanning) html5QrCode.stop().catch(()=>{});
@@ -577,7 +567,7 @@
       }
     });
     
-    console.log('✅ 密影·ECB 已加载 — CDN已修复，扫描就绪');
+    console.log('✅ 密影·ECB 已加载 — 后置摄像头·全屏扫描');
   })();
 </script>
 </body>
