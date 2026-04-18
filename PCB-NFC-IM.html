@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>🔐 PCB-NFC-IM · 信息卡解密</title>
+  <!-- Tailwind CSS 框架 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 加密库 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <!-- 二维码扫描库 -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    body {
+      background: radial-gradient(circle at 20% 20%, #132433, #050b12);
+      min-height: 100vh;
+    }
+    .glass-panel {
+      background: rgba(12, 25, 38, 0.7);
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+      border: 1px solid rgba(0, 150, 255, 0.12);
+      box-shadow: 0 20px 40px -12px rgba(0,0,0,0.7);
+    }
+    .log-line {
+      border-left: 3px solid #3b82f6;
+      padding-left: 0.75rem;
+      margin: 0.5rem 0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+    }
+    @media (min-width: 640px) {
+      .log-line { font-size: 0.85rem; }
+    }
+    #reader {
+      border-radius: 1.75rem;
+      overflow: hidden;
+      background: #030b12;
+      min-height: 200px;
+      position: relative;
+    }
+    #reader video {
+      border-radius: 1.5rem !important;
+      object-fit: cover;
+      width: 100% !important;
+      height: 100% !important;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+    }
+    @media (max-width: 420px) {
+      .info-grid { grid-template-columns: 1fr; }
+    }
+    .page {
+      display: none;
+    }
+    .page.active {
+      display: block;
+    }
+    .back-btn {
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .back-btn:hover {
+      background: rgba(255,255,255,0.05);
+    }
+  </style>
+</head>
+<body class="text-gray-200 p-3 sm:p-4 md:p-6 flex items-center justify-center">
+
+<div class="w-full max-w-2xl mx-auto transition-all duration-300">
+  
+  <!-- ========== 主菜单页面 ========== -->
+  <div id="pageHome" class="page active">
+    <div class="text-center mb-6">
+      <h1 class="text-4xl sm:text-5xl font-bold glow-text flex items-center justify-center gap-2">
+        <span>🪪</span> PCB-NFC-IM
+      </h1>
+      <p class="text-blue-200/70 text-sm sm:text-base mt-2">扫描密钥 · 查看持卡人信息</p>
+    </div>
+    <div class="grid grid-cols-1 gap-4 sm:gap-5">
+      <!-- 扫描卡片 -->
+      <div id="goToScan" class="glass-panel rounded-3xl p-5 sm:p-6 cursor-pointer hover:scale-[1.01] transition-all duration-300 border border-blue-500/20 hover:border-blue-400/40">
+        <div class="flex items-center gap-4">
+          <span class="text-4xl sm:text-5xl">📷</span>
+          <div>
+            <h2 class="text-2xl font-semibold">扫描密钥</h2>
+            <p class="text-gray-400 text-sm">使用后置摄像头扫描二维码（KEY二维码）</p>
+          </div>
+        </div>
+      </div>
+      <!-- 手动输入卡片 -->
+      <div id="goToManual" class="glass-panel rounded-3xl p-5 sm:p-6 cursor-pointer hover:scale-[1.01] transition-all duration-300 border border-emerald-500/20 hover:border-emerald-400/40">
+        <div class="flex items-center gap-4">
+          <span class="text-4xl sm:text-5xl">⌨️</span>
+          <div>
+            <h2 class="text-2xl font-semibold">手动输入</h2>
+            <p class="text-gray-400 text-sm">直接输入AES密钥进行解密（KEY二维码内容）</p>
+          </div>
+        </div>
+      </div>
+      <!-- 关于卡片 -->
+      <div id="goToAbout" class="glass-panel rounded-3xl p-5 sm:p-6 cursor-pointer hover:scale-[1.01] transition-all duration-300 border border-purple-500/20 hover:border-purple-400/40">
+        <div class="flex items-center gap-4">
+          <span class="text-4xl sm:text-5xl">ℹ️</span>
+          <div>
+            <h2 class="text-2xl font-semibold">关于本页</h2>
+            <p class="text-gray-400 text-sm">了解页面用途与隐私说明</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="text-center text-gray-500 text-xs mt-6">纯静态页面 · AES-ECB · 无后端 · 数据已加密</p>
+  </div>
+
+  <!-- ========== 扫描页面 ========== -->
+  <div id="pageScan" class="page">
+    <div class="flex items-center gap-3 mb-4">
+      <button class="back-btn glass-panel rounded-full p-2 px-4 flex items-center gap-2 text-sm" data-back="home">
+        ← 返回
+      </button>
+      <h2 class="text-xl sm:text-2xl font-semibold flex items-center gap-2"><span class="text-blue-400">📡</span> 扫描密钥</h2>
+      <span id="scanStatusBadge" class="ml-auto text-xs bg-slate-700 px-3 py-1.5 rounded-full">⚪ 待机</span>
+    </div>
+    <div class="glass-panel rounded-3xl p-4 sm:p-5">
+      <div id="reader" class="w-full aspect-square max-h-[300px] mx-auto"></div>
+      <div class="flex gap-3 mt-4">
+        <button id="startScanBtn" class="flex-1 bg-blue-700 hover:bg-blue-600 text-white font-medium py-3 rounded-xl shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
+          ▶ 启动扫描
+        </button>
+        <button id="stopScanBtn" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-medium py-3 rounded-xl transition disabled:opacity-50">
+          ⏹ 停止
+        </button>
+      </div>
+      <p id="lastScannedKey" class="text-xs text-blue-300/80 mt-3 truncate font-mono">最近扫描: —</p>
+      <!-- 日志区 -->
+      <div class="mt-4">
+        <div class="flex items-center gap-2 mb-2"><span class="text-cyan-400">⚙️</span><span class="font-medium text-sm">解密过程</span></div>
+        <div id="logPanelScan" class="bg-black/30 rounded-2xl p-3 h-40 overflow-y-auto font-mono text-xs border border-slate-700/40">
+          <div class="log-line text-cyan-300">🔹 密文已加载</div>
+          <div class="log-line text-slate-400">🔹 等待扫描密钥…</div>
+        </div>
+      </div>
+    </div>
+    <!-- 结果卡片 -->
+    <div class="mt-4 glass-panel rounded-3xl p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-lg font-semibold"><span class="text-purple-400">🧑‍🎓</span> 持卡人信息</h3>
+        <span id="decryptStateTagScan" class="text-xs bg-slate-700/80 px-3 py-1 rounded-full">🔒 未解密</span>
+      </div>
+      <div id="infoCardAreaScan" class="min-h-[140px]">
+        <div class="text-gray-400 text-sm italic flex items-center justify-center h-24">等待解密</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 手动输入页面 ========== -->
+  <div id="pageManual" class="page">
+    <div class="flex items-center gap-3 mb-4">
+      <button class="back-btn glass-panel rounded-full p-2 px-4 flex items-center gap-2 text-sm" data-back="home">
+        ← 返回
+      </button>
+      <h2 class="text-xl sm:text-2xl font-semibold flex items-center gap-2"><span class="text-emerald-400">🔑</span> 手动输入密钥</h2>
+    </div>
+    <div class="glass-panel rounded-3xl p-5">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm text-gray-400 mb-2">AES 密钥 (16/24/32字节)</label>
+          <input type="text" id="manualKeyInput" placeholder="请输入您的密钥" class="w-full bg-slate-900/80 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+        <button id="manualDecryptBtn" class="w-full bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-600 text-white font-bold py-3.5 rounded-xl shadow-lg transition disabled:opacity-50">
+          🔓 解密查看信息
+        </button>
+        <p class="text-xs text-gray-400 text-center">密钥由卡面二维码提供，请勿泄露！</p>
+      </div>
+      <div class="mt-5">
+        <div class="flex items-center gap-2 mb-2"><span class="text-cyan-400">📋</span><span class="font-medium text-sm">解密日志</span></div>
+        <div id="logPanelManual" class="bg-black/30 rounded-2xl p-3 h-40 overflow-y-auto font-mono text-xs border border-slate-700/40">
+          <div class="log-line text-cyan-300">🔹 密文已加载</div>
+          <div class="log-line text-slate-400">🔹 输入密钥后点击解密</div>
+        </div>
+      </div>
+    </div>
+    <div class="mt-4 glass-panel rounded-3xl p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-lg font-semibold"><span class="text-purple-400">🧑‍🎓</span> 持卡人信息</h3>
+        <span id="decryptStateTagManual" class="text-xs bg-slate-700/80 px-3 py-1 rounded-full">🔒 未解密</span>
+      </div>
+      <div id="infoCardAreaManual" class="min-h-[140px]">
+        <div class="text-gray-400 text-sm italic flex items-center justify-center h-24">等待解密</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 关于页面 ========== -->
+  <div id="pageAbout" class="page">
+    <div class="flex items-center gap-3 mb-4">
+      <button class="back-btn glass-panel rounded-full p-2 px-4 flex items-center gap-2 text-sm" data-back="home">
+        ← 返回
+      </button>
+      <h2 class="text-xl sm:text-2xl font-semibold flex items-center gap-2"><span class="text-purple-400">ℹ️</span> 关于本页</h2>
+    </div>
+    <div class="glass-panel rounded-3xl p-6">
+      <div class="text-center mb-4">
+        <span class="text-5xl">🛡️</span>
+        <h3 class="text-2xl font-bold mt-2">PCB-NFC-IM 信息卡</h3>
+        <p class="text-blue-200/70">纯静态 · 隐私安全 · 开源可查</p>
+      </div>
+      <div class="space-y-3 text-gray-300 text-sm leading-relaxed">
+        <p>📄 本页面为纯静态 HTML 页面，无任何后端服务器，您的所有操作均在本地完成，<strong>不会上传任何数据</strong>。页面托管于 GitHub，您可随时审查源代码。</p>
+        <p>🎯 设计初衷：防止 NFC 信息卡丢失后无法联系失主。若您幸运地捡到这张卡片，请<strong>扫描卡片上的密钥二维码</strong>或手动输入密钥，即可查看持卡人联系方式。</p>
+        <p>🔐 对于持卡人：您的个人信息已使用 AES-ECB 加密存储于页面中，只有拥有正确密钥才能解密，<strong>无需担心信息泄露风险</strong>。</p>
+        <p>💡 提示：密钥由卡面二维码提供，请妥善保管。</p>
+        <p class="mt-4 text-xs text-gray-400">--- Hmis25565</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function(){
+    "use strict";
+    
+    // ---------- 正式配置 ----------
+    // 注意：此处密文为 Base64 编码的 AES-ECB 加密结果（密钥需用户提供）
+    const CIPHER_TEXT = "b1b8a2f8f4bee5140164c35f90d6f9d134df1a02354c612d77a940a956948ea1ba24e9898c9803077d756d6ac4a85101ebc543048ac8a06560a05ae00f011739c60e1f2b5ef0cac99a69ab4b7594b24d8b0dd76eb9c036a4e83f0b7fd72064616abef5e0d38a56ee3a41cc4aa3737eae544703ccd06722eec09d3598f6bf165588d8a5644030b49c5bc87caaf7602c3f";
+    
+    // ---------- 页面切换逻辑 ----------
+    const pages = {
+      home: document.getElementById('pageHome'),
+      scan: document.getElementById('pageScan'),
+      manual: document.getElementById('pageManual'),
+      about: document.getElementById('pageAbout')
+    };
+    
+    // 扫描器全局变量
+    let html5QrCode = null;
+    let scanning = false;
+    const scanStatusBadge = document.getElementById('scanStatusBadge');
+    
+    // 释放扫描器资源
+    async function releaseScanner(keepStatusText = false) {
+      if (html5QrCode) {
+        try {
+          if (scanning) {
+            await html5QrCode.stop();
+            scanning = false;
+          }
+        } catch (e) {} finally {
+          html5QrCode = null;
+        }
+      }
+      scanning = false;
+      if (!keepStatusText && scanStatusBadge) {
+        scanStatusBadge.textContent = '⚪ 待机';
+      }
+    }
+    
+    function showPage(pageId) {
+      if (pageId !== 'scan') {
+        releaseScanner();
+      }
+      Object.values(pages).forEach(p => p.classList.remove('active'));
+      pages[pageId].classList.add('active');
+      if (pageId === 'scan' && !html5QrCode) {
+        scanStatusBadge.textContent = '⚪ 待机';
+      }
+    }
+    
+    document.addEventListener('click', (e) => {
+      const backBtn = e.target.closest('[data-back]');
+      if (backBtn) {
+        const target = backBtn.getAttribute('data-back');
+        if (target === 'home') showPage('home');
+      }
+    });
+    
+    document.getElementById('goToScan').addEventListener('click', () => showPage('scan'));
+    document.getElementById('goToManual').addEventListener('click', () => showPage('manual'));
+    document.getElementById('goToAbout').addEventListener('click', () => showPage('about'));
+    
+    // ---------- 解密核心函数 ----------
+async function performDecrypt(keyString, logPanel, decryptStateTag, infoCardArea, lastKeySpan) {
+  if (!keyString) throw new Error('密钥为空');
+  addLogToPanel(logPanel, `🔑 获得密钥: "${keyString}" (长度${keyString.length})`, 'highlight');
+  
+  // 密钥统一按 UTF-8 字符串解析（参考代码中使用 Utf8 方式）
+  const keyWA = CryptoJS.enc.Utf8.parse(keyString);
+  const bytes = keyWA.sigBytes;
+  addLogToPanel(logPanel, `🔧 密钥解析: UTF-8 → ${bytes} 字节`, 'info');
+  
+  if (![16, 24, 32].includes(bytes)) {
+    throw new Error(`密钥长度 ${bytes} 字节，需为 16/24/32`);
+  }
+  
+  addLogToPanel(logPanel, `🧩 执行 AES-ECB 解密 … (密文为 Hex)`, 'info');
+  let decrypted;
+  try {
+    // 密文是 Hex 格式，必须用 Hex.parse 转换为 WordArray
+    const cipherHex = CryptoJS.enc.Hex.parse(CIPHER_TEXT);
+    decrypted = CryptoJS.AES.decrypt(
+      { ciphertext: cipherHex },
+      keyWA,
+      {
+        mode: CryptoJS.mode.ECB,
+        padding: CryptoJS.pad.Pkcs7
+      }
+    );
+  } catch (e) {
+    throw new Error('解密过程异常: ' + e.message);
+  }
+  
+  const plainText = decrypted.toString(CryptoJS.enc.Utf8);
+  if (!plainText) throw new Error('解密结果为空，密钥不正确或密文损坏');
+  
+  addLogToPanel(logPanel, `✅ 解密成功，明文长度 ${plainText.length}`, 'success');
+  
+  let jsonData;
+  try {
+    jsonData = JSON.parse(plainText);
+  } catch {
+    throw new Error('解密结果不是有效JSON');
+  }
+  
+  if (lastKeySpan) lastKeySpan.textContent = `最近扫描: ${keyString}`;
+  return jsonData;
+}
+    
+    function addLogToPanel(panel, message, type = 'info') {
+      const line = document.createElement('div');
+      line.className = 'log-line';
+      let colorClass = 'text-slate-300';
+      if (type === 'success') colorClass = 'text-emerald-300';
+      else if (type === 'error') colorClass = 'text-rose-300';
+      else if (type === 'highlight') colorClass = 'text-cyan-300 font-semibold';
+      line.innerHTML = `<span class="${colorClass}">${message}</span>`;
+      panel.appendChild(line);
+      panel.scrollTop = panel.scrollHeight;
+    }
+    
+    function clearLogPanel(panel) {
+      panel.innerHTML = '';
+      addLogToPanel(panel, '🔹 密文已就绪');
+      addLogToPanel(panel, '🔹 等待密钥 (AES-128/192/256-ECB)');
+    }
+    
+    async function typewriterRender(json, decryptStateTag, infoCardArea) {
+      if (window._typewriterActive) return;
+      window._typewriterActive = true;
+      
+      decryptStateTag.textContent = '⚡ 解密中·渲染';
+      decryptStateTag.className = 'text-xs bg-yellow-800/60 px-3 py-1 rounded-full';
+      
+      const uid = Date.now() + Math.random();
+      infoCardArea.innerHTML = `
+        <div class="info-grid">
+          <div class="bg-slate-800/40 rounded-xl p-3"><div class="text-xs text-blue-300/80">姓名</div><div class="text-xl font-bold" id="type-name-${uid}"></div></div>
+          <div class="bg-slate-800/40 rounded-xl p-3"><div class="text-xs text-blue-300/80">年级/部门</div><div class="text-xl font-bold" id="type-grade-${uid}"></div></div>
+          <div class="bg-slate-800/40 rounded-xl p-3"><div class="text-xs text-blue-300/80">班级/职务</div><div class="text-xl font-bold" id="type-class-${uid}"></div></div>
+          <div class="bg-slate-800/40 rounded-xl p-3"><div class="text-xs text-blue-300/80">单位/学校</div><div class="text-lg font-bold" id="type-school-${uid}"></div></div>
+          <div class="col-span-2 bg-slate-800/40 rounded-xl p-3"><div class="text-xs text-blue-300/80">联系方式</div><div class="text-xl font-bold" id="type-contact-${uid}"></div></div>
+        </div>
+      `;
+      
+      const nameEl = document.getElementById(`type-name-${uid}`);
+      const gradeEl = document.getElementById(`type-grade-${uid}`);
+      const classEl = document.getElementById(`type-class-${uid}`);
+      const schoolEl = document.getElementById(`type-school-${uid}`);
+      const contactEl = document.getElementById(`type-contact-${uid}`);
+      
+      const fields = {
+        name: json.name || '—',
+        grade: json.grade || json.department || '—',
+        class: json.class || json.title || '—',
+        school: json.school || json.organization || '—',
+        contact: json.contact || '—'
+      };
+      
+      async function type(el, text, speed=40) {
+        if(!el) return;
+        el.textContent = '';
+        for(let char of text) {
+          el.textContent += char;
+          await new Promise(r => setTimeout(r, speed));
+        }
+      }
+      
+      try {
+        await type(nameEl, fields.name, 60);
+        await type(gradeEl, fields.grade, 50);
+        await type(classEl, fields.class, 50);
+        await type(schoolEl, fields.school, 45);
+        await type(contactEl, fields.contact, 45);
+      } catch (e) {}
+      
+      decryptStateTag.textContent = '🔓 已解密';
+      decryptStateTag.className = 'text-xs bg-emerald-800/60 px-3 py-1 rounded-full';
+      window._typewriterActive = false;
+    }
+    
+    // ---------- 扫描页面逻辑 ----------
+    const startScanBtn = document.getElementById('startScanBtn');
+    const stopScanBtn = document.getElementById('stopScanBtn');
+    const lastScannedKeySpan = document.getElementById('lastScannedKey');
+    const logPanelScan = document.getElementById('logPanelScan');
+    const decryptStateTagScan = document.getElementById('decryptStateTagScan');
+    const infoCardAreaScan = document.getElementById('infoCardAreaScan');
+    
+    clearLogPanel(logPanelScan);
+    
+    async function stopScanner(manual = true) {
+      if (html5QrCode) {
+        try {
+          if (scanning) await html5QrCode.stop();
+        } catch (e) {}
+        html5QrCode = null;
+      }
+      scanning = false;
+      scanStatusBadge.textContent = '⏹ 已停止';
+      if (manual) addLogToPanel(logPanelScan, '⏸ 扫描已手动停止');
+    }
+    
+    async function startScanner() {
+      await releaseScanner(true);
+      
+      if (typeof Html5Qrcode === 'undefined') {
+        addLogToPanel(logPanelScan, '❌ 二维码库加载失败，请刷新', 'error');
+        scanStatusBadge.textContent = '❌ 库加载失败';
+        return;
+      }
+      
+      try {
+        scanStatusBadge.textContent = '📡 请求摄像头';
+        const cameras = await Html5Qrcode.getCameras();
+        let selectedCameraId = null;
+        if (cameras && cameras.length) {
+          const backCamera = cameras.find(cam => 
+            cam.label.toLowerCase().includes('back') || 
+            cam.label.includes('后置') ||
+            cam.label.toLowerCase().includes('environment')
+          );
+          selectedCameraId = backCamera ? backCamera.id : cameras[0].id;
+        }
+        
+        html5QrCode = new Html5Qrcode("reader");
+        
+        const config = {
+          fps: 10,
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            return { width: viewfinderWidth, height: viewfinderHeight };
+          },
+          aspectRatio: 1.0,
+          videoConstraints: {
+            facingMode: "environment"
+          }
+        };
+        
+        await html5QrCode.start(
+          selectedCameraId || { facingMode: "environment" },
+          config,
+          async (decodedText) => {
+            if (!decodedText) return;
+            addLogToPanel(logPanelScan, `📸 扫描到密钥: ${decodedText}`, 'highlight');
+            lastScannedKeySpan.textContent = `最近扫描: ${decodedText}`;
+            
+            if (html5QrCode && scanning) {
+              try {
+                await html5QrCode.stop();
+                scanning = false;
+                html5QrCode = null;
+              } catch (e) {}
+            }
+            scanStatusBadge.textContent = '⏸ 已暂停 (扫描成功)';
+            
+            try {
+              const json = await performDecrypt(decodedText, logPanelScan, decryptStateTagScan, infoCardAreaScan, lastScannedKeySpan);
+              await typewriterRender(json, decryptStateTagScan, infoCardAreaScan);
+            } catch (e) {
+              addLogToPanel(logPanelScan, `❌ 解密失败: ${e.message}`, 'error');
+              decryptStateTagScan.textContent = '❌ 失败';
+              infoCardAreaScan.innerHTML = `<div class="text-rose-300 text-sm p-4">解密失败，密钥不正确或数据损坏</div>`;
+            }
+          },
+          (error) => {}
+        );
+        
+        scanning = true;
+        scanStatusBadge.textContent = '🟢 扫描中 (后置)';
+        addLogToPanel(logPanelScan, '📹 后置摄像头已启动，对准二维码');
+        
+      } catch (err) {
+        scanStatusBadge.textContent = '❌ 启动失败';
+        addLogToPanel(logPanelScan, `摄像头错误: ${err.message || err}`, 'error');
+        await releaseScanner(true);
+      }
+    }
+    
+    startScanBtn.addEventListener('click', () => {
+      startScanner().catch(e => addLogToPanel(logPanelScan, `启动异常: ${e.message}`, 'error'));
+    });
+    
+    stopScanBtn.addEventListener('click', () => stopScanner(true));
+    
+    // ---------- 手动页面逻辑 ----------
+    const manualKeyInput = document.getElementById('manualKeyInput');
+    const manualDecryptBtn = document.getElementById('manualDecryptBtn');
+    const logPanelManual = document.getElementById('logPanelManual');
+    const decryptStateTagManual = document.getElementById('decryptStateTagManual');
+    const infoCardAreaManual = document.getElementById('infoCardAreaManual');
+    
+    clearLogPanel(logPanelManual);
+    // 不再预填演示密钥
+    
+    let manualDecrypting = false;
+    manualDecryptBtn.addEventListener('click', async () => {
+      if (manualDecrypting) return;
+      const key = manualKeyInput.value.trim();
+      if (!key) {
+        addLogToPanel(logPanelManual, '⚠️ 请输入密钥', 'error');
+        return;
+      }
+      
+      manualDecrypting = true;
+      manualDecryptBtn.disabled = true;
+      manualDecryptBtn.textContent = '⏳ 解密中...';
+      
+      addLogToPanel(logPanelManual, `⌨️ 手动输入密钥: ${key}`, 'highlight');
+      try {
+        const json = await performDecrypt(key, logPanelManual, decryptStateTagManual, infoCardAreaManual, null);
+        await typewriterRender(json, decryptStateTagManual, infoCardAreaManual);
+      } catch (e) {
+        addLogToPanel(logPanelManual, `❌ 解密失败: ${e.message}`, 'error');
+        decryptStateTagManual.textContent = '❌ 失败';
+        infoCardAreaManual.innerHTML = `<div class="text-rose-300 text-sm p-4">解密失败，请检查密钥</div>`;
+      } finally {
+        manualDecrypting = false;
+        manualDecryptBtn.disabled = false;
+        manualDecryptBtn.textContent = '🔓 解密查看信息';
+      }
+    });
+    
+    window.addEventListener('beforeunload', () => {
+      if (html5QrCode) {
+        if (scanning) html5QrCode.stop().catch(()=>{});
+        html5QrCode = null;
+      }
+    });
+    
+    console.log('✅ PCB-NFC-IM 已加载 — 安全·纯静态');
+  })();
+</script>
+</body>
+</html>
