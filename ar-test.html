@@ -305,40 +305,58 @@
     document.getElementById('goToAbout').addEventListener('click', () => showPage('about'));
     
     // ---------- 解密核心函数 ----------
-    async function performDecrypt(keyString, logPanel, decryptStateTag, infoCardArea, lastKeySpan) {
-      if (!keyString) throw new Error('密钥为空');
-      addLogToPanel(logPanel, `🔑 获得密钥: "${keyString}" (长度${keyString.length})`, 'highlight');
-      
-      const keyWA = CryptoJS.enc.Utf8.parse(keyString);
-      const bytes = keyWA.sigBytes;
-      addLogToPanel(logPanel, `📏 密钥字节: ${bytes} (需16/24/32)`, 'info');
-      
-      addLogToPanel(logPanel, `🧩 执行 AES-ECB 解密 …`, 'info');
-      let decrypted;
-      try {
-        decrypted = CryptoJS.AES.decrypt(CIPHER_TEXT, keyWA, {
-          mode: CryptoJS.mode.ECB,
-          padding: CryptoJS.pad.Pkcs7
-        });
-      } catch (e) {
-        throw new Error('解密过程异常: ' + e.message);
+async function performDecrypt(keyString, logPanel, decryptStateTag, infoCardArea, lastKeySpan) {
+  if (!keyString) throw new Error('密钥为空');
+  addLogToPanel(logPanel, `🔑 获得密钥: "${keyString}" (长度${keyString.length})`, 'highlight');
+  
+  // 判断密钥是否为十六进制字符串（只含0-9 a-f A-F，长度为偶数）
+  const isHex = /^[0-9A-Fa-f]+$/.test(keyString) && keyString.length % 2 === 0;
+  let keyWA;
+  if (isHex) {
+    keyWA = CryptoJS.enc.Hex.parse(keyString);
+    addLogToPanel(logPanel, `🔧 密钥格式: Hex → ${keyWA.sigBytes} 字节`, 'info');
+  } else {
+    keyWA = CryptoJS.enc.Utf8.parse(keyString);
+    addLogToPanel(logPanel, `🔧 密钥格式: UTF-8 → ${keyWA.sigBytes} 字节`, 'info');
+  }
+  
+  const bytes = keyWA.sigBytes;
+  if (![16, 24, 32].includes(bytes)) {
+    throw new Error(`密钥长度 ${bytes} 字节，需为 16/24/32`);
+  }
+  
+  addLogToPanel(logPanel, `🧩 执行 AES-ECB 解密 … (密文为Hex)`, 'info');
+  let decrypted;
+  try {
+    // 密文是Hex格式，必须用 Hex.parse 转换
+    const cipherHex = CryptoJS.enc.Hex.parse(CIPHER_TEXT);
+    decrypted = CryptoJS.AES.decrypt(
+      { ciphertext: cipherHex },   // 直接传入 WordArray
+      keyWA,
+      {
+        mode: CryptoJS.mode.ECB,
+        padding: CryptoJS.pad.Pkcs7
       }
-      
-      const plainText = decrypted.toString(CryptoJS.enc.Utf8);
-      if (!plainText) throw new Error('解密结果为空，密钥错误');
-      
-      addLogToPanel(logPanel, `✅ 解密成功，明文长度 ${plainText.length}`, 'success');
-      
-      let jsonData;
-      try {
-        jsonData = JSON.parse(plainText);
-      } catch {
-        throw new Error('解密结果不是有效JSON');
-      }
-      
-      if (lastKeySpan) lastKeySpan.textContent = `最近密钥: ${keyString}`;
-      return jsonData;
-    }
+    );
+  } catch (e) {
+    throw new Error('解密过程异常: ' + e.message);
+  }
+  
+  const plainText = decrypted.toString(CryptoJS.enc.Utf8);
+  if (!plainText) throw new Error('解密结果为空，密钥不正确或密文损坏');
+  
+  addLogToPanel(logPanel, `✅ 解密成功，明文长度 ${plainText.length}`, 'success');
+  
+  let jsonData;
+  try {
+    jsonData = JSON.parse(plainText);
+  } catch {
+    throw new Error('解密结果不是有效JSON');
+  }
+  
+  if (lastKeySpan) lastKeySpan.textContent = `最近扫描: ${keyString}`;
+  return jsonData;
+}
     
     function addLogToPanel(panel, message, type = 'info') {
       const line = document.createElement('div');
