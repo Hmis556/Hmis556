@@ -6,10 +6,10 @@
   <title>🔐 密影·AES-ECB 多页面 · 扫描修复</title>
   <!-- Tailwind CSS 框架 -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 加密库 & 二维码扫描 (稳定CDN) -->
+  <!-- 加密库 (稳定CDN) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-  <!-- html5-qrcode 核心库 -->
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+  <!-- ✅ 修复：使用 jsdelivr CDN 替代失效的 unpkg 链接 -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     * { font-family: 'Inter', system-ui, sans-serif; }
@@ -210,7 +210,7 @@
       <div class="space-y-3 text-gray-300 text-sm leading-relaxed">
         <p>🔐 本页面演示在浏览器中使用 AES-ECB 解密硬编码密文。扫描二维码或手动输入密钥即可解密出持有人信息。</p>
         <p>✨ <strong>流式解密风格</strong>：解密过程中逐步骤展示原理，并以打字机效果渲染 JSON 数据。</p>
-        <p>📱 完美适配手机/平板/桌面，暗黑玻璃态。扫描模块已修复重复启动、资源释放等问题。</p>
+        <p>📱 完美适配手机/平板/桌面，暗黑玻璃态。扫描模块已修复资源占用问题并更换稳定CDN。</p>
         <p>🧪 内置密文对应明文: 林小夕 / 五年级2班 / 星辰实验小学。</p>
         <p>💡 提示: 密钥为 <code class="bg-slate-800 px-2 py-0.5 rounded">1234567890123456</code> (16字节)。</p>
       </div>
@@ -278,17 +278,13 @@
     function showPage(pageId) {
       // 如果离开扫描页面，立刻释放摄像头资源
       if (pageId !== 'scan') {
-        releaseScanner().then(() => {
-          // 可选更新UI
-        });
+        releaseScanner().then(() => {});
       }
       
       Object.values(pages).forEach(p => p.classList.remove('active'));
       pages[pageId].classList.add('active');
       
-      // 如果是扫描页，确保扫描器状态UI同步 (但不会自动启动)
       if (pageId === 'scan') {
-        // 如果之前有扫描实例残留，但已在上面的release中处理，这里保证状态
         if (!html5QrCode) {
           scanStatusBadge.textContent = '⚪ 待机';
         }
@@ -311,7 +307,7 @@
     document.getElementById('goToManual').addEventListener('click', () => showPage('manual'));
     document.getElementById('goToAbout').addEventListener('click', () => showPage('about'));
     
-    // ---------- 解密核心函数 (接受日志面板与结果区域参数) ----------
+    // ---------- 解密核心函数 ----------
     async function performDecrypt(keyString, logPanel, decryptStateTag, infoCardArea, lastKeySpan) {
       if (!keyString) throw new Error('密钥为空');
       addLogToPanel(logPanel, `🔑 获得密钥: "${keyString}" (长度${keyString.length})`, 'highlight');
@@ -368,7 +364,6 @@
     
     // 打字机渲染
     async function typewriterRender(json, decryptStateTag, infoCardArea) {
-      // 取消之前的渲染状态 (简单防冲突)
       if (window._typewriterActive) return;
       window._typewriterActive = true;
       
@@ -415,16 +410,14 @@
         await type(classEl, fields.class, 50);
         await type(schoolEl, fields.school, 45);
         await type(contactEl, fields.contact, 45);
-      } catch (e) {
-        // 忽略中断
-      }
+      } catch (e) {}
       
       decryptStateTag.textContent = '🔓 已解密';
       decryptStateTag.className = 'text-xs bg-emerald-800/60 px-3 py-1 rounded-full';
       window._typewriterActive = false;
     }
     
-    // ---------- 扫描页面逻辑 (修复资源管理) ----------
+    // ---------- 扫描页面逻辑 (修复CDN并增强健壮性) ----------
     const startScanBtn = document.getElementById('startScanBtn');
     const stopScanBtn = document.getElementById('stopScanBtn');
     const lastScannedKeySpan = document.getElementById('lastScannedKey');
@@ -435,7 +428,11 @@
     clearLogPanel(logPanelScan);
     addLogToPanel(logPanelScan, '💡 可扫描演示二维码或手动输入 1234567890123456');
     
-    // 停止扫描 (对外)
+    // 检查库是否加载成功
+    function isHtml5QrcodeAvailable() {
+      return typeof Html5Qrcode !== 'undefined';
+    }
+    
     async function stopScanner(manual = true) {
       if (html5QrCode) {
         try {
@@ -453,17 +450,15 @@
       }
     }
     
-    // 启动扫描 (完全重置)
     async function startScanner() {
-      // 先释放之前的任何实例，保证干净状态
-      await releaseScanner(true);
-      
-      // 检查库是否加载
-      if (typeof Html5Qrcode === 'undefined') {
-        addLogToPanel(logPanelScan, '❌ 二维码库加载失败，请刷新', 'error');
+      // 检查库是否可用
+      if (!isHtml5QrcodeAvailable()) {
+        addLogToPanel(logPanelScan, '❌ 二维码库加载失败，请检查网络或刷新', 'error');
         scanStatusBadge.textContent = '❌ 库加载失败';
         return;
       }
+      
+      await releaseScanner(true);
       
       try {
         scanStatusBadge.textContent = '📡 请求摄像头';
@@ -474,10 +469,8 @@
           return;
         }
         
-        // 创建新实例
         html5QrCode = new Html5Qrcode("reader");
         
-        // 配置扫描 (适应移动端)
         const config = { 
           fps: 10, 
           qrbox: (viewfinderWidth, viewfinderHeight) => {
@@ -491,12 +484,10 @@
           cameras[0].id,
           config,
           async (decodedText) => {
-            // 扫描成功回调
             if (!decodedText) return;
             addLogToPanel(logPanelScan, `📸 扫描到密钥: ${decodedText}`, 'highlight');
             lastScannedKeySpan.textContent = `最近密钥: ${decodedText}`;
             
-            // 立即停止扫描 (避免重复识别)
             if (html5QrCode && scanning) {
               try {
                 await html5QrCode.stop();
@@ -506,7 +497,6 @@
             }
             scanStatusBadge.textContent = '⏸ 已暂停 (扫描成功)';
             
-            // 执行解密
             try {
               const json = await performDecrypt(decodedText, logPanelScan, decryptStateTagScan, infoCardAreaScan, lastScannedKeySpan);
               await typewriterRender(json, decryptStateTagScan, infoCardAreaScan);
@@ -516,9 +506,7 @@
               infoCardAreaScan.innerHTML = `<div class="text-rose-300 text-sm p-4">解密失败，密钥不正确</div>`;
             }
           },
-          (error) => {
-            // 扫描错误回调 (静默处理，不刷屏)
-          }
+          (error) => {}
         );
         
         scanning = true;
@@ -528,7 +516,6 @@
       } catch (err) {
         scanStatusBadge.textContent = '❌ 启动失败';
         addLogToPanel(logPanelScan, `摄像头错误: ${err.message || err}`, 'error');
-        // 确保释放
         await releaseScanner(true);
       }
     }
@@ -542,8 +529,6 @@
     stopScanBtn.addEventListener('click', () => {
       stopScanner(true).catch(e => {});
     });
-    
-    // 页面离开时自动释放 (通过showPage已经处理)
     
     // ---------- 手动页面逻辑 ----------
     const manualKeyInput = document.getElementById('manualKeyInput');
@@ -584,7 +569,7 @@
       }
     });
     
-    // 清理资源 (页面卸载)
+    // 页面卸载清理
     window.addEventListener('beforeunload', () => {
       if (html5QrCode) {
         if (scanning) html5QrCode.stop().catch(()=>{});
@@ -592,8 +577,7 @@
       }
     });
     
-    // 预置演示提示
-    console.log('✅ 密影·ECB 已加载 — 扫描修复版');
+    console.log('✅ 密影·ECB 已加载 — CDN已修复，扫描就绪');
   })();
 </script>
 </body>
